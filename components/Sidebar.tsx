@@ -1,6 +1,7 @@
-import { LayoutDashboard, Bell, Globe, Plus, Settings } from "lucide-react";
+import { LayoutDashboard, Bell, Globe, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { CreateSiteModal } from "./CreateSiteModal";
 
 // On définit à quoi ressemble un dossier pour que TypeScript comprenne
 interface Folder {
@@ -58,9 +59,9 @@ export function Sidebar({ folders }: { folders: Folder[] | null }) {
 
       {/* Footer Sidebar */}
       <div className="p-4 border-t border-slate-800 space-y-3">
-        <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" size="sm">
-          <Plus className="h-4 w-4 mr-2" /> Nouveau Site
-        </Button>
+        
+        {/* On remplace l'ancien bouton par notre Modale */}
+        <CreateSiteModal />
         
         <button className="w-full flex items-center justify-center gap-2 text-xs text-slate-500 hover:text-slate-300 py-2">
           <Settings className="h-3 w-3" /> Paramètres
