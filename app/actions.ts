@@ -64,3 +64,69 @@ export async function createFolder(formData: FormData) {
   revalidatePath('/')
   return { success: true }
 }
+
+// app/actions.ts (Ajouts)
+
+// ... imports existants
+
+// Mettre à jour le Profil Utilisateur
+export async function updateProfile(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return { error: "Non connecté" }
+
+  const firstName = formData.get('firstName') as string
+  const lastName = formData.get('lastName') as string
+
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({
+      id: user.id,
+      first_name: firstName,
+      last_name: lastName,
+      email: user.email // On garde l'email synchro au cas où
+    })
+
+  if (error) {
+    console.error('Erreur update profile:', error)
+    return { error: "Erreur lors de la mise à jour du profil" }
+  }
+
+  revalidatePath('/settings')
+  return { success: "Profil mis à jour" }
+}
+
+// Mettre à jour les paramètres de l'Organisation (Clé API)
+export async function updateOrgSettings(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return { error: "Non connecté" }
+
+  const apiKey = formData.get('apiKey') as string
+  const orgId = formData.get('orgId') as string
+
+  // Vérification de sécurité : L'user appartient-il bien à cette org ?
+  const { data: member } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', user.id)
+    .eq('organization_id', orgId)
+    .single()
+
+  if (!member) return { error: "Accès non autorisé à cette organisation" }
+
+  const { error } = await supabase
+    .from('organizations')
+    .update({ google_api_key: apiKey })
+    .eq('id', orgId)
+
+  if (error) {
+    console.error('Erreur update org:', error)
+    return { error: "Erreur lors de la sauvegarde de la clé API" }
+  }
+
+  revalidatePath('/settings')
+  return { success: "Paramètres d'organisation mis à jour" }
+}
