@@ -130,3 +130,43 @@ export async function updateOrgSettings(formData: FormData) {
   revalidatePath('/settings')
   return { success: "Paramètres d'organisation mis à jour" }
 }
+
+// app/actions.ts (Ajouts pour la gestion des Pages)
+
+// Ajouter une sous-page
+export async function createPage(formData: FormData) {
+  const supabase = await createClient()
+  
+  const url = formData.get('url') as string
+  const folderId = formData.get('folderId') as string
+  
+  // Validation basique
+  if (!url || !folderId) return { error: "URL requise" }
+
+  const { error } = await supabase
+    .from('pages')
+    .insert({
+      url,
+      folder_id: folderId
+    })
+
+  if (error) return { error: "Erreur lors de l'ajout de la page" }
+  
+  revalidatePath(`/site/${folderId}`)
+  return { success: "Page ajoutée" }
+}
+
+// Supprimer une sous-page
+export async function deletePage(pageId: string, folderId: string) {
+  const supabase = await createClient()
+  
+  const { error } = await supabase
+    .from('pages')
+    .delete()
+    .eq('id', pageId)
+
+  if (error) return { error: "Impossible de supprimer" }
+  
+  revalidatePath(`/site/${folderId}`)
+  return { success: "Page supprimée" }
+}
