@@ -4,19 +4,17 @@ import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 
 export default async function DashboardLayout({
-  children, // C'est ici que viendront s'insérer vos pages (Dashboard ou Détail Site)
+  children,
 }: {
   children: React.ReactNode;
 }) {
   const supabase = await createClient();
 
-  // 1. Vérification Auth (Identique à votre page actuelle)
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     redirect("/login");
   }
 
-  // 2. Récupérer l'ID de l'organisation pour la Sidebar
   const { data: membershipData } = await supabase
     .from("organization_members")
     .select("organization_id")
@@ -34,12 +32,18 @@ export default async function DashboardLayout({
   }
 
   return (
+    // 1. Le conteneur principal fait la taille de l'écran et ne scrolle pas (pour figer la sidebar)
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* La Sidebar est chargée ICI, une seule fois pour tout le layout */}
+      
+      {/* 2. La Sidebar (gauche) */}
       <Sidebar folders={folders} />
 
-      {/* "children" sera remplacé par le contenu de page.tsx ou site/[id]/page.tsx */}
-      {children}
+      {/* 3. La Zone de Contenu (droite) */}
+      {/* flex-1 : Prend toute la largeur restante */}
+      {/* overflow-y-auto : C'est LUI qui crée la barre de défilement pour le contenu */}
+      <main className="flex-1 overflow-y-auto">
+        {children}
+      </main>
     </div>
   );
 }
