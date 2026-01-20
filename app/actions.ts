@@ -170,3 +170,95 @@ export async function deletePage(pageId: string, folderId: string) {
   revalidatePath(`/site/${folderId}`)
   return { success: "Page supprimée" }
 }
+
+
+
+export async function runPageSpeedAudit(url: string, folderId: string, pageId?: string) {
+  const supabase = await createClient()
+
+  // 1. ÉTAPE CLÉ : Récupérer la clé API depuis l'Organisation liée au Dossier
+  // On fait une jointure : Dossier -> Organisation -> Clé API
+  const { data: folderData, error: folderError } = await supabase
+    .from('folders')
+    .select(`
+      organization_id,
+      organizations (
+        google_api_key
+      )
+    `)
+    .eq('id', folderId)
+    .single()
+
+  if (folderError || !folderData?.organizations) {
+    console.error("Erreur récupération organisation:", folderError)
+    return { error: "Impossible de récupérer la configuration de l'organisation." }
+  }
+
+  // On extrait la clé de la réponse Supabase (Notez le tableau car c'est une relation)
+  // TypeScript peut voir ça comme un tableau ou un objet selon votre génération de types
+  // @ts-ignore : Pour contourner le typage strict si 'organizations' est vu comme un tableau
+  const apiKey = Array.isArray(folderData.organizations) 
+    ? folderData.organizations[0]?.google_api_key 
+    : folderData.organizations?.google_api_key
+
+  if (!apiKey) {
+    return { error: "Aucune clé API configurée. Allez dans Paramètres > Général." }
+  }
+
+  // 2. Appel API Google PageSpeed (Reste inchangé, mais utilise la bonne variable apiKey)
+  const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${apiKey}&strategy=mobile&category=performance&category=accessibility&category=best-practices&category=seo`
+
+  try {
+    const response = await fetch(apiUrl)
+    const data = await response.json()
+
+    if (data.error) {
+      console.error("API Google Error:", data.error)
+      return { error: "Erreur Google : " + data.error.message }
+    }
+
+    const lighthouse = data.lighthouseResult
+    const audits = lighthouse.audits
+    const categories = lighthouse.categories
+
+    // 3. Extraction et Sauvegarde (Reste inchangé)
+    const performanceScore = Math.round(categories['performance'].score * 100)
+    
+    const screenshot = audits['final-screenshot']?.details?.data
+    const isHttps = audits['is-on-https']?.score === 1
+    const isCrawlable = audits['is-crawlable']?.score === 1
+    const statusCode = lighthouse.environment?.networkUserAgent ? 200 : 0
+
+    const { error: dbError } = await supabase
+      .from('audits')
+      .insert({
+        folder_id: folderId,
+        page_id: pageId || null,
+        url: url,
+        status_code: statusCode,
+        https_valid: isHttps,
+        indexable: isCrawlable,
+        screenshot: screenshot,
+        performance_score: performanceScore,
+        report_json: data 
+      })
+
+    if (dbError) {
+      console.error("DB Insert Error:", dbError)
+      return { error: "Erreur lors de la sauvegarde du rapport." }
+    }
+
+    // Mise à jour statut dossier
+    await supabase
+      .from('folders')
+      .update({ status: 'up' })
+      .eq('id', folderId)
+
+    revalidatePath(`/site/${folderId}`)
+    return { success: "Audit terminé avec succès !" }
+
+  } catch (err: any) {
+    console.error("Server Action Error:", err)
+    return { error: "Erreur interne serveur." }
+  }
+}

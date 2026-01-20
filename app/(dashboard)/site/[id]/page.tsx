@@ -3,10 +3,11 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Trash2, ExternalLink, ShieldCheck, Search, Globe, Plus, Settings } from 'lucide-react'
-import { createPage, deletePage } from '@/app/actions' // Assure-toi d'avoir ajouté ces exports
+import { Trash2, ShieldCheck, Search, Globe, Plus, Activity, ImageIcon } from 'lucide-react'
+import { createPage, deletePage } from '@/app/actions'
+import { RunAuditButton } from '@/components/RunAuditButton'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -20,7 +21,6 @@ export default async function SiteDetailsPage({ params }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Récupérer le dossier (Site racine)
   const { data: folder } = await supabase
     .from('folders')
     .select('*')
@@ -29,14 +29,12 @@ export default async function SiteDetailsPage({ params }: PageProps) {
 
   if (!folder) notFound()
 
-  // Récupérer les sous-pages associées
   const { data: pages } = await supabase
     .from('pages')
     .select('*')
     .eq('folder_id', id)
     .order('created_at', { ascending: true })
 
-  // Récupérer le dernier audit pour le bloc Général (Placeholder logic)
   const { data: lastAudit } = await supabase
     .from('audits')
     .select('*')
@@ -74,124 +72,147 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                 <Button variant="destructive" size="icon">
                     <Trash2 className="h-4 w-4" />
                 </Button>
-                <Button>Lancer une analyse</Button>
+                <RunAuditButton url={folder.root_url} folderId={folder.id} />
             </div>
         </div>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-3">
+      {/* --- 2. VUE D'ENSEMBLE (GRILLE 4 COLONNES) --- */}
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold text-gray-900">Dernier Audit</h2>
         
-        {/* --- 2. BLOC GÉNÉRAL (Gauche - 2 colonnes) --- */}
-        <div className="lg:col-span-2 space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Vue d'ensemble</h2>
+        {/* Une seule grille pour aligner parfaitement les 4 blocs */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             
-            <div className="grid gap-6 md:grid-cols-2">
-                {/* Screenshot Card */}
-                <Card className="overflow-hidden md:col-span-2 border-gray-200 shadow-sm">
-                    <CardHeader className="bg-gray-50 border-b border-gray-100 py-3">
-                        <CardTitle className="text-sm font-medium text-gray-500">Aperçu du site</CardTitle>
-                    </CardHeader>
-                    <div className="aspect-video bg-gray-100 relative flex items-center justify-center">
-                        {lastAudit?.screenshot ? (
-                            <img src={lastAudit.screenshot} alt="Screenshot" className="object-cover w-full h-full" />
-                        ) : (
-                            <span className="text-gray-400 text-sm">Aucun aperçu disponible</span>
-                        )}
+            {/* CARTE 1 : APERÇU (S'adapte à la hauteur des autres) */}
+            <Card className="overflow-hidden border-gray-200 shadow-sm relative group h-full bg-gray-100 flex items-center justify-center">
+                {lastAudit?.screenshot ? (
+                    // object-cover + object-top permet de cropper le bas de l'image (souvent moins intéressant)
+                    // h-full w-full force l'image à remplir la carte
+                    <img 
+                        src={lastAudit.screenshot} 
+                        alt="Screenshot" 
+                        className="absolute inset-0 w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105" 
+                    />
+                ) : (
+                    <div className="flex flex-col items-center gap-2 text-gray-400">
+                        <ImageIcon className="h-8 w-8 opacity-50" />
+                        <span className="text-xs">Aucun aperçu</span>
                     </div>
-                </Card>
+                )}
+                {/* Petit overlay au survol pour indiquer qu'on peut voir mieux si besoin (optionnel) */}
+                {lastAudit?.screenshot && (
+                    <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                )}
+            </Card>
 
-                {/* Status Cards */}
-                <Card className="border-gray-200 shadow-sm">
-                   <CardContent className="pt-6 flex items-center gap-4">
-                        <div className={`p-3 rounded-full ${lastAudit?.status_code === 200 ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
-                            <Globe className="h-6 w-6" />
-                        </div>
-                        <div>
-                            <div className="text-sm font-medium text-gray-500">Code Statut</div>
-                            <div className="text-2xl font-bold text-gray-900">{lastAudit?.status_code || '---'}</div>
-                        </div>
-                   </CardContent>
-                </Card>
+            {/* CARTE 2 : STATUS */}
+            <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full">
+                <div className="flex items-center gap-3 mb-2">
+                        <div className={`p-2 rounded-full ${lastAudit?.status_code === 200 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        <Activity className="h-5 w-5" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-500">Réponse</span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900">
+                    {lastAudit?.status_code || '---'}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Code HTTP standard</p>
+            </Card>
 
-                <Card className="border-gray-200 shadow-sm">
-                   <CardContent className="pt-6 flex flex-col gap-4">
-                        <div className="flex items-center justify-between">
-                            <span className="flex items-center gap-2 text-sm text-gray-600">
-                                <ShieldCheck className="h-4 w-4" /> HTTPS
-                            </span>
-                            {lastAudit?.https_valid ? (
-                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200">Sécurisé</Badge>
-                            ) : (
-                                <Badge variant="outline" className="text-gray-400">Inconnu</Badge>
-                            )}
-                        </div>
-                         <div className="flex items-center justify-between">
-                            <span className="flex items-center gap-2 text-sm text-gray-600">
-                                <Search className="h-4 w-4" /> Indexable
-                            </span>
-                             {lastAudit?.indexable ? (
-                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200">Oui</Badge>
-                            ) : (
-                                <Badge variant="outline" className="text-gray-400">Inconnu</Badge>
-                            )}
-                        </div>
-                   </CardContent>
-                </Card>
-            </div>
+            {/* CARTE 3 : HTTPS */}
+            <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full">
+                <div className="flex items-center gap-3 mb-2">
+                        <div className={`p-2 rounded-full ${lastAudit?.https_valid ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                        <ShieldCheck className="h-5 w-5" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-500">Sécurité</span>
+                </div>
+                <div className="text-xl font-bold text-gray-900 truncate">
+                    {lastAudit?.https_valid ? "Sécurisé" : "Non sécurisé"}
+                </div>
+                    <p className="text-xs text-muted-foreground mt-1">Certificat SSL valide</p>
+            </Card>
+
+            {/* CARTE 4 : INDEXABLE */}
+            <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full">
+                <div className="flex items-center gap-3 mb-2">
+                        <div className={`p-2 rounded-full ${lastAudit?.indexable ? 'bg-purple-100 text-purple-600' : 'bg-orange-100 text-orange-600'}`}>
+                        <Search className="h-5 w-5" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-500">SEO Tech</span>
+                </div>
+                <div className="text-xl font-bold text-gray-900">
+                    {lastAudit?.indexable ? "Indexable" : "Bloqué"}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Visible par Google</p>
+            </Card>
         </div>
+      </section>
 
-        {/* --- 3. BLOC LISTE DES PAGES (Droite - 1 colonne) --- */}
-        <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Pages suivies</h2>
-            
-            <Card className="border-gray-200 shadow-sm h-full">
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-gray-500">Ajouter une page</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {/* Formulaire d'ajout simple */}
-                    <form action={createPage} className="flex gap-2">
-                        <input type="hidden" name="folderId" value={id} />
+      {/* --- 3. BLOC LISTE DES PAGES (En dessous) --- */}
+      <section className="space-y-4 pt-4 border-t border-gray-100">
+         <div className="flex items-center justify-between">
+            <div>
+                <h2 className="text-xl font-semibold text-gray-900">Pages internes</h2>
+                <p className="text-sm text-gray-500">Ajoutez d'autres URLs de ce site à surveiller.</p>
+            </div>
+         </div>
+         
+         <Card className="border-gray-200 shadow-sm">
+            <CardContent className="p-6 space-y-6">
+                
+                {/* Formulaire d'ajout */}
+                <form action={createPage} className="flex gap-4 items-end">
+                    <input type="hidden" name="folderId" value={id} />
+                    <div className="flex-1 space-y-2">
+                        <span className="text-xs font-medium text-gray-700 ml-1">Nouvelle URL</span>
                         <Input 
                             name="url" 
-                            placeholder="https://..." 
+                            placeholder="https://mon-site.com/tarifs" 
                             required 
                             className="bg-gray-50"
                         />
-                        <Button type="submit" size="icon" variant="secondary">
-                            <Plus className="h-4 w-4" />
-                        </Button>
-                    </form>
+                    </div>
+                    <Button type="submit" variant="secondary">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Ajouter
+                    </Button>
+                </form>
 
-                    {/* Liste des pages */}
-                    <div className="space-y-2 mt-4">
-                        {pages && pages.length > 0 ? (
-                            pages.map((page) => (
-                                <div key={page.id} className="group flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-white hover:border-gray-300 transition-all">
-                                    <div className="truncate text-sm font-medium text-gray-700 max-w-[200px]" title={page.url}>
+                {/* Liste des pages */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {pages && pages.length > 0 ? (
+                        pages.map((page) => (
+                            <div key={page.id} className="group relative flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all">
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                    <div className="p-2 bg-gray-50 rounded-md text-gray-400">
+                                        <Globe className="h-4 w-4" />
+                                    </div>
+                                    <div className="truncate text-sm font-medium text-gray-700" title={page.url}>
                                         {page.url}
                                     </div>
-                                    <form action={async () => {
-                                        'use server'
-                                        await deletePage(page.id, id)
-                                    }}>
-                                        <button type="submit" className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Trash2 className="h-4 w-4" />
-                                        </button>
-                                    </form>
                                 </div>
-                            ))
-                        ) : (
-                            <div className="text-center py-8 text-gray-400 text-xs">
-                                Aucune page additionnelle.
+                                <form action={async () => {
+                                    'use server'
+                                    await deletePage(page.id, id)
+                                }}>
+                                    <button type="submit" className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-md transition-colors opacity-0 group-hover:opacity-100">
+                                        <Trash2 className="h-4 w-4" />
+                                    </button>
+                                </form>
                             </div>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
+                        ))
+                    ) : (
+                        <div className="col-span-full py-8 text-center text-gray-400 text-sm bg-gray-50 rounded-lg border border-dashed">
+                            Aucune page configurée.
+                        </div>
+                    )}
+                </div>
+            </CardContent>
+         </Card>
+      </section>
 
-      </div>
     </div>
   )
 }
