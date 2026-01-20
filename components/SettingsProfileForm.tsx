@@ -14,28 +14,29 @@ export function SettingsProfileForm({ initialFirstName, initialLastName }: { ini
     setLoading(true);
     const result = await updateProfile(formData);
     setLoading(false);
-    if (result?.success) setMessage("✅ Profil mis à jour");
+    if (result?.success) setMessage("✅ Mis à jour");
   }
 
   return (
-    <div className="border rounded-lg p-6 bg-white shadow-sm">
-      <h2 className="text-xl font-semibold mb-4">Profil Personnel</h2>
-      <form action={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="firstName">Prénom</Label>
+    <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm">
+      <form action={handleSubmit} className="flex flex-col items-start space-y-6 w-full max-w-lg">
+        
+        <div className="grid grid-cols-2 gap-6 w-full">
+          <div className="space-y-2 text-left">
+            <Label htmlFor="firstName" className="text-sm font-medium text-gray-700">Prénom</Label>
             <Input id="firstName" name="firstName" defaultValue={initialFirstName} />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="lastName">Nom</Label>
+          <div className="space-y-2 text-left">
+            <Label htmlFor="lastName" className="text-sm font-medium text-gray-700">Nom</Label>
             <Input id="lastName" name="lastName" defaultValue={initialLastName} />
           </div>
         </div>
-        <div className="flex items-center justify-between">
-            <Button type="submit" disabled={loading}>
-            {loading ? "Sauvegarde..." : "Mettre à jour mon profil"}
+
+        <div className="flex items-center gap-4">
+            <Button type="submit" disabled={loading} className="bg-black text-white hover:bg-gray-800">
+              {loading ? "Sauvegarde..." : "Mettre à jour mon profil"}
             </Button>
-            {message && <span className="text-sm font-medium">{message}</span>}
+            {message && <span className="text-sm font-medium text-gray-600 animate-in fade-in slide-in-from-left-2">{message}</span>}
         </div>
       </form>
     </div>

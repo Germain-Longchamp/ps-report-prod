@@ -13,40 +13,43 @@ export function SettingsOrgForm({ orgId, orgName, initialApiKey }: { orgId: stri
   async function handleSubmit(formData: FormData) {
     setLoading(true);
     setMessage("");
-    
-    // On ajoute l'ID caché
     formData.append('orgId', orgId);
     
     const result = await updateOrgSettings(formData);
     setLoading(false);
 
     if (result?.error) setMessage("❌ " + result.error);
-    if (result?.success) setMessage("✅ " + result.success);
+    if (result?.success) setMessage("✅ Sauvegardé");
   }
 
   return (
-    <div className="border rounded-lg p-6 bg-white shadow-sm">
-      <h2 className="text-xl font-semibold mb-4">Général ({orgName})</h2>
-      <form action={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="apiKey">Clé API Google PageSpeed</Label>
-          <Input 
-            id="apiKey" 
-            name="apiKey" 
-            type="password" // Pour masquer la clé visuellement
-            defaultValue={initialApiKey} 
-            placeholder="AIzaSy..." 
-          />
-          <p className="text-xs text-muted-foreground">
-            Requise pour lancer les audits de performance.
+    <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm">
+      <form action={handleSubmit} className="flex flex-col items-start space-y-6 w-full max-w-lg">
+        
+        <div className="w-full space-y-2 text-left">
+          <Label htmlFor="apiKey" className="text-sm font-medium text-gray-700">
+            Clé API Google PageSpeed
+          </Label>
+          <div className="relative">
+            <Input 
+              id="apiKey" 
+              name="apiKey" 
+              type="password" 
+              defaultValue={initialApiKey} 
+              placeholder="Ex: AIzaSy..." 
+              className="font-mono text-sm"
+            />
+          </div>
+          <p className="text-xs text-gray-500 text-left">
+            Cette clé sera utilisée pour tous les audits des sites de <strong>{orgName}</strong>.
           </p>
         </div>
         
-        <div className="flex items-center justify-between">
-            <Button type="submit" disabled={loading}>
-            {loading ? "Sauvegarde..." : "Enregistrer"}
+        <div className="flex items-center gap-4">
+            <Button type="submit" disabled={loading} className="bg-black text-white hover:bg-gray-800">
+              {loading ? "Sauvegarde..." : "Enregistrer la clé"}
             </Button>
-            {message && <span className="text-sm font-medium">{message}</span>}
+            {message && <span className="text-sm font-medium text-gray-600 animate-in fade-in slide-in-from-left-2">{message}</span>}
         </div>
       </form>
     </div>
