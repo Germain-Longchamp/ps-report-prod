@@ -106,19 +106,42 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                 )}
             </Card>
 
-            {/* CARTE 2 : STATUS */}
-            <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full">
-                <div className="flex items-center gap-3 mb-2">
-                        <div className={`p-2 rounded-full ${lastAudit?.status_code === 200 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                        <Activity className="h-5 w-5" />
-                    </div>
-                    <span className="text-sm font-medium text-gray-500">Réponse</span>
-                </div>
-                <div className="text-3xl font-bold text-gray-900">
-                    {lastAudit?.status_code || '---'}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">Code HTTP standard</p>
-            </Card>
+            {/* CARTE 2 : STATUS (Version "Pop" visuelle) */}
+            {(() => {
+                const isUp = lastAudit?.status_code === 200
+                return (
+                    <Card className={`border-0 shadow-md flex flex-col justify-between p-6 h-full relative overflow-hidden transition-all ${
+                        isUp 
+                        ? 'bg-emerald-600 text-white' 
+                        : 'bg-red-600 text-white'
+                    }`}>
+                        {/* Effet de fond décoratif (cercle subtil) */}
+                        <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+
+                        <div className="flex items-start justify-between">
+                            <div className="flex flex-col gap-1">
+                                <span className={`text-xs font-semibold uppercase tracking-wider ${isUp ? 'text-emerald-100' : 'text-red-100'}`}>
+                                    État du service
+                                </span>
+                                <div className="text-2xl font-bold flex items-center gap-2">
+                                    {isUp ? "Opérationnel" : "Erreur Critique"}
+                                </div>
+                            </div>
+                            
+                            {/* Indicateur visuel (Pastille animée) */}
+                            <div className="relative flex h-4 w-4 mt-1">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-4 w-4 bg-white"></span>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 flex items-center gap-2 text-sm opacity-90">
+                            {isUp ? <Activity className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                            <span className="font-mono">Code {lastAudit?.status_code || '---'}</span>
+                        </div>
+                    </Card>
+                )
+            })()}
 
             {/* CARTE 3 : HTTPS */}
             <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full">
