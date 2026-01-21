@@ -1,8 +1,8 @@
 'use server'
 
 import { createClient } from '@/utils/supabase/server'
-import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 
 export async function createOrganization(formData: FormData) {
   const supabase = await createClient()
@@ -65,9 +65,6 @@ export async function createFolder(formData: FormData) {
   return { success: true }
 }
 
-// app/actions.ts (Ajouts)
-
-// ... imports existants
 
 // Mettre à jour le Profil Utilisateur
 export async function updateProfile(formData: FormData) {
@@ -131,7 +128,6 @@ export async function updateOrgSettings(formData: FormData) {
   return { success: "Paramètres d'organisation mis à jour" }
 }
 
-// app/actions.ts (Ajouts pour la gestion des Pages)
 
 // Ajouter une sous-page
 export async function createPage(formData: FormData) {
@@ -176,64 +172,70 @@ export async function deletePage(pageId: string, folderId: string) {
   return { success: "Page supprimée" }
 }
 
-
+// Run page speed
 
 export async function runPageSpeedAudit(url: string, folderId: string, pageId?: string) {
   const supabase = await createClient()
 
-  // 1. ÉTAPE CLÉ : Récupérer la clé API depuis l'Organisation liée au Dossier
-  // On fait une jointure : Dossier -> Organisation -> Clé API
-  const { data: folderData, error: folderError } = await supabase
+  // 1. Récupération de la clé API
+  const { data: folderData } = await supabase
     .from('folders')
-    .select(`
-      organization_id,
-      organizations (
-        google_api_key
-      )
-    `)
+    .select('organization_id, organizations(google_api_key)')
     .eq('id', folderId)
     .single()
 
-  if (folderError || !folderData?.organizations) {
-    console.error("Erreur récupération organisation:", folderError)
-    return { error: "Impossible de récupérer la configuration de l'organisation." }
-  }
-
-  // On extrait la clé de la réponse Supabase (Notez le tableau car c'est une relation)
-  // TypeScript peut voir ça comme un tableau ou un objet selon votre génération de types
-  // @ts-ignore : Pour contourner le typage strict si 'organizations' est vu comme un tableau
-  const apiKey = Array.isArray(folderData.organizations) 
+  // @ts-ignore
+  const apiKey = Array.isArray(folderData?.organizations) 
     ? folderData.organizations[0]?.google_api_key 
-    : folderData.organizations?.google_api_key
+    : folderData?.organizations?.google_api_key
 
-  if (!apiKey) {
-    return { error: "Aucune clé API configurée. Allez dans Paramètres > Général." }
-  }
+  if (!apiKey) return { error: "Clé API manquante." }
 
-  // 2. Appel API Google PageSpeed (Reste inchangé, mais utilise la bonne variable apiKey)
-  const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${apiKey}&strategy=mobile&category=performance&category=accessibility&category=best-practices&category=seo`
+  // 2. Préparation des URLs API (Mobile & Desktop)
+  const baseUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${apiKey}&category=performance&category=accessibility&category=best-practices&category=seo`
+  
+  const mobileUrl = `${baseUrl}&strategy=mobile`
+  const desktopUrl = `${baseUrl}&strategy=desktop`
 
   try {
-    const response = await fetch(apiUrl)
-    const data = await response.json()
+    // 3. Lancement des 2 analyses en PARALLÈLE (Gain de temps)
+    const [mobileRes, desktopRes] = await Promise.all([
+      fetch(mobileUrl),
+      fetch(desktopUrl)
+    ])
 
-    if (data.error) {
-      console.error("API Google Error:", data.error)
-      return { error: "Erreur Google : " + data.error.message }
+    const mobileData = await mobileRes.json()
+    const desktopData = await desktopRes.json()
+
+    if (mobileData.error || desktopData.error) {
+      console.error("Google API Error", mobileData.error || desktopData.error)
+      return { error: "Erreur lors de l'analyse Google." }
     }
 
-    const lighthouse = data.lighthouseResult
-    const audits = lighthouse.audits
-    const categories = lighthouse.categories
-
-    // 3. Extraction et Sauvegarde (Reste inchangé)
-    const performanceScore = Math.round(categories['performance'].score * 100)
+    // 4. Extraction des données (Depuis le rapport Mobile principalement)
+    const mCats = mobileData.lighthouseResult.categories
+    const mAudits = mobileData.lighthouseResult.audits
     
-    const screenshot = audits['final-screenshot']?.details?.data
-    const isHttps = audits['is-on-https']?.score === 1
-    const isCrawlable = audits['is-crawlable']?.score === 1
-    const statusCode = lighthouse.environment?.networkUserAgent ? 200 : 0
+    // Pour le Desktop, on veut juste le score de perf
+    const dCats = desktopData.lighthouseResult.categories
 
+    // Métriques
+    const perfMobile = Math.round(mCats['performance'].score * 100)
+    const perfDesktop = Math.round(dCats['performance'].score * 100)
+    const accessScore = Math.round(mCats['accessibility'].score * 100)
+    const bestPracticesScore = Math.round(mCats['best-practices'].score * 100)
+    const seoScore = Math.round(mCats['seo'].score * 100)
+    
+    // TTFB (Time to First Byte) en ms
+    const ttfb = Math.round(mAudits['server-response-time']?.numericValue || 0)
+
+    // Infos générales
+    const screenshot = mAudits['final-screenshot']?.details?.data
+    const isHttps = mAudits['is-on-https']?.score === 1
+    const isCrawlable = mAudits['is-crawlable']?.score === 1
+    const statusCode = mobileData.lighthouseResult.environment?.networkUserAgent ? 200 : 0
+
+    // 5. Sauvegarde
     const { error: dbError } = await supabase
       .from('audits')
       .insert({
@@ -244,32 +246,28 @@ export async function runPageSpeedAudit(url: string, folderId: string, pageId?: 
         https_valid: isHttps,
         indexable: isCrawlable,
         screenshot: screenshot,
-        performance_score: performanceScore,
-        report_json: data 
+        performance_score: perfMobile,         // Mobile par défaut
+        performance_desktop_score: perfDesktop, // Nouveau champ
+        accessibility_score: accessScore,       // Nouveau
+        best_practices_score: bestPracticesScore,// Nouveau
+        seo_score: seoScore,                    // Nouveau
+        ttfb: ttfb,                             // Nouveau
+        report_json: mobileData // On garde le JSON mobile pour le détail
       })
 
-    if (dbError) {
-      console.error("DB Insert Error:", dbError)
-      return { error: "Erreur lors de la sauvegarde du rapport." }
+    if (dbError) throw dbError
+
+    // Mise à jour statut dossier racine si c'est lui qu'on audite
+    if (!pageId) {
+       await supabase.from('folders').update({ status: 'up' }).eq('id', folderId)
     }
 
-    // Mise à jour statut dossier
-    await supabase
-      .from('folders')
-      .update({ status: 'up' })
-      .eq('id', folderId)
-
     revalidatePath(`/site/${folderId}`)
-    return { success: "Audit terminé avec succès !" }
+    return { success: "Audit terminé !" }
 
   } catch (err: any) {
-    console.error("Server Action Error:", err)
-    return { error: "Erreur interne serveur." }
+    console.error("Action Error:", err)
+    return { error: "Erreur technique lors de l'audit." }
   }
 }
 
-
-
-
-
-// ...
