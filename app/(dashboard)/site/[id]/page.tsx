@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Trash2, ShieldCheck, Search, Globe, Plus, Activity, ImageIcon } from 'lucide-react'
 import { createPage, deletePage } from '@/app/actions'
 import { RunAuditButton } from '@/components/RunAuditButton'
+import { ExternalLink } from 'lucide-react'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -174,64 +175,108 @@ export default async function SiteDetailsPage({ params }: PageProps) {
       </section>
 
       {/* --- 3. BLOC LISTE DES PAGES (En dessous) --- */}
-      <section className="space-y-4 pt-4 border-t border-gray-100">
+      {/* --- 3. BLOC LISTE DES PAGES --- */}
+      <section className="space-y-6 pt-6 border-t border-gray-100">
          <div className="flex items-center justify-between">
             <div>
                 <h2 className="text-xl font-semibold text-gray-900">Pages internes</h2>
-                <p className="text-sm text-gray-500">Ajoutez d'autres URLs de ce site à surveiller.</p>
+                <p className="text-sm text-gray-500">Gérez les URLs spécifiques de ce site.</p>
             </div>
          </div>
          
-         <Card className="border-gray-200 shadow-sm">
-            <CardContent className="p-6 space-y-6">
+         <Card className="border-gray-200 shadow-sm bg-gray-50/50">
+            <CardContent className="p-6 space-y-8">
                 
-                {/* Formulaire d'ajout */}
-                <form action={createPage} className="flex gap-4 items-end">
-                    <input type="hidden" name="folderId" value={id} />
-                    <div className="flex-1 space-y-2">
-                        <span className="text-xs font-medium text-gray-700 ml-1">Nouvelle URL</span>
-                        <Input 
-                            name="url" 
-                            placeholder="https://mon-site.com/tarifs" 
-                            required 
-                            className="bg-gray-50"
-                        />
-                    </div>
-                    <Button type="submit" variant="secondary">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Ajouter
-                    </Button>
-                </form>
+                {/* A. Formulaire d'ajout (Plus complet) */}
+                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <h3 className="text-sm font-medium text-gray-900 mb-4 flex items-center gap-2">
+                        <Plus className="h-4 w-4 text-blue-600" />
+                        Ajouter une nouvelle page
+                    </h3>
+                    <form action={createPage} className="flex flex-col md:flex-row gap-4 items-end">
+                        <input type="hidden" name="folderId" value={id} />
+                        
+                        {/* Champ Nom */}
+                        <div className="w-full md:w-1/3 space-y-2">
+                            <label htmlFor="name" className="text-xs font-medium text-gray-700 ml-1">
+                                Nom convivial
+                            </label>
+                            <Input 
+                                id="name"
+                                name="name" 
+                                placeholder="Ex: Page Tarifs" 
+                                className="bg-white"
+                            />
+                        </div>
 
-                {/* Liste des pages */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {/* Champ URL */}
+                        <div className="w-full md:flex-1 space-y-2">
+                            <label htmlFor="url" className="text-xs font-medium text-gray-700 ml-1">
+                                URL complète
+                            </label>
+                            <Input 
+                                id="url"
+                                name="url" 
+                                placeholder="https://mon-site.com/tarifs" 
+                                required 
+                                className="bg-white"
+                            />
+                        </div>
+
+                        <Button type="submit" className="bg-black text-white hover:bg-gray-800">
+                            Ajouter
+                        </Button>
+                    </form>
+                </div>
+
+                {/* B. Liste des pages (Empilées Pleine Largeur) */}
+                <div className="space-y-3">
                     {pages && pages.length > 0 ? (
                         pages.map((page) => (
-                            <div key={page.id} className="group relative flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm transition-all">
-                                <div className="flex items-center gap-3 overflow-hidden">
-                                    <div className="p-2 bg-gray-50 rounded-md text-gray-400">
-                                        <Globe className="h-4 w-4" />
+                            <div key={page.id} className="group flex items-center justify-between p-4 rounded-xl border border-gray-200 bg-white shadow-sm hover:border-blue-200 hover:shadow-md transition-all">
+                                
+                                {/* Info Page */}
+                                <div className="flex items-start gap-4">
+                                    <div className="mt-1 p-2 bg-blue-50 text-blue-600 rounded-lg">
+                                        <Globe className="h-5 w-5" />
                                     </div>
-                                    <div className="truncate text-sm font-medium text-gray-700" title={page.url}>
-                                        {page.url}
+                                    <div>
+                                        <div className="font-semibold text-gray-900">
+                                            {page.name || "Page sans nom"}
+                                        </div>
+                                        <a href={page.url} target="_blank" className="text-sm text-gray-500 hover:text-blue-600 hover:underline flex items-center gap-1 mt-0.5">
+                                            {page.url}
+                                            <ExternalLink className="h-3 w-3" />
+                                        </a>
                                     </div>
                                 </div>
-                                <form action={async () => {
-                                    'use server'
-                                    await deletePage(page.id, id)
-                                }}>
-                                    <button type="submit" className="text-gray-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                                        <Trash2 className="h-4 w-4" />
-                                    </button>
-                                </form>
+
+                                {/* Actions & KPIs Futurs */}
+                                <div className="flex items-center gap-4">
+                                    {/* Placeholder pour les scores futurs */}
+                                    <div className="hidden md:flex items-center gap-6 mr-4 text-sm text-gray-400">
+                                        <span>Perf: --</span>
+                                        <span>SEO: --</span>
+                                    </div>
+
+                                    <form action={async () => {
+                                        'use server'
+                                        await deletePage(page.id, id)
+                                    }}>
+                                        <Button variant="ghost" size="icon" className="text-gray-400 hover:text-red-600 hover:bg-red-50">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </form>
+                                </div>
                             </div>
                         ))
                     ) : (
-                        <div className="col-span-full py-8 text-center text-gray-400 text-sm bg-gray-50 rounded-lg border border-dashed">
-                            Aucune page configurée.
+                        <div className="text-center py-12 text-gray-400 text-sm">
+                            Aucune page configurée. Utilisez le formulaire ci-dessus pour commencer.
                         </div>
                     )}
                 </div>
+
             </CardContent>
          </Card>
       </section>

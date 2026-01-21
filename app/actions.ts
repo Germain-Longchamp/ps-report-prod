@@ -138,19 +138,24 @@ export async function createPage(formData: FormData) {
   const supabase = await createClient()
   
   const url = formData.get('url') as string
+  const name = formData.get('name') as string // <-- Ajout ici
   const folderId = formData.get('folderId') as string
   
-  // Validation basique
+  // Validation
   if (!url || !folderId) return { error: "URL requise" }
 
   const { error } = await supabase
     .from('pages')
     .insert({
       url,
+      name: name || "Page sans nom", // Valeur par défaut si vide
       folder_id: folderId
     })
 
-  if (error) return { error: "Erreur lors de l'ajout de la page" }
+  if (error) {
+    console.error(error)
+    return { error: "Erreur lors de l'ajout de la page" }
+  }
   
   revalidatePath(`/site/${folderId}`)
   return { success: "Page ajoutée" }
@@ -262,3 +267,9 @@ export async function runPageSpeedAudit(url: string, folderId: string, pageId?: 
     return { error: "Erreur interne serveur." }
   }
 }
+
+
+
+
+
+// ...
