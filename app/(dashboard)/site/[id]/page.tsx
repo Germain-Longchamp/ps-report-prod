@@ -41,6 +41,7 @@ export default async function SiteDetailsPage({ params }: PageProps) {
     .eq('folder_id', id)
     .order('created_at', { ascending: false })
 
+  // Récupérer le dernier audit GLOBAL (Racine)
   const lastMainAudit = allAudits?.find(a => a.page_id === null) || null;
   const getLastAuditForPage = (pageId: string) => allAudits?.find(a => a.page_id === pageId) || null
 
@@ -48,59 +49,64 @@ export default async function SiteDetailsPage({ params }: PageProps) {
     <div className="relative min-h-screen">
       <div className="p-10 w-full max-w-6xl space-y-10 pb-32">
         
-        {/* --- 1. HEADER (Simplifié) --- */}
+        {/* --- 1. HEADER (Avec Miniature) --- */}
         <div className="flex flex-col gap-6 border-b pb-8">
           <div className="flex items-start justify-between">
-              <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
-                      <Link href="/" className="hover:text-black transition-colors">Mes Sites</Link>
-                      <span>/</span>
-                      <span>{folder.name}</span>
-                  </div>
-                  <h1 className="text-4xl font-bold tracking-tight text-gray-900">{folder.name}</h1>
-                  <a 
-                      href={folder.root_url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-blue-600 hover:underline text-lg font-medium"
-                  >
-                      <Globe className="h-4 w-4" />
-                      {folder.root_url}
-                  </a>
+              
+              {/* Groupe Gauche : Miniature + Textes */}
+              <div className="flex items-start gap-6">
+                
+                {/* Miniature Screenshot */}
+                <div className="h-24 w-24 shrink-0 rounded-xl border border-gray-200 bg-gray-100 overflow-hidden relative flex items-center justify-center shadow-sm">
+                    {lastMainAudit?.screenshot ? (
+                        <img 
+                            src={lastMainAudit.screenshot} 
+                            alt="Aperçu site" 
+                            className="h-full w-full object-cover object-top"
+                        />
+                    ) : (
+                        <ImageIcon className="h-8 w-8 text-gray-300" />
+                    )}
+                </div>
+
+                {/* Infos Texte */}
+                <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+                        <Link href="/" className="hover:text-black transition-colors">Mes Sites</Link>
+                        <span>/</span>
+                        <span>{folder.name}</span>
+                    </div>
+                    <h1 className="text-4xl font-bold tracking-tight text-gray-900">{folder.name}</h1>
+                    <a 
+                        href={folder.root_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-blue-600 hover:underline text-lg font-medium"
+                    >
+                        <Globe className="h-4 w-4" />
+                        {folder.root_url}
+                    </a>
+                </div>
               </div>
               
+              {/* Groupe Droite : Actions */}
               <div className="flex gap-3">
                   <Button variant="outline">Paramètres</Button>
                   <Button variant="destructive" size="icon">
                       <Trash2 className="h-4 w-4" />
                   </Button>
-                  {/* Le bouton d'audit a été retiré d'ici */}
               </div>
           </div>
         </div>
 
-        {/* --- 2. VUE D'ENSEMBLE --- */}
+        {/* --- 2. VUE GÉNÉRAL (3 Cartes) --- */}
         <section className="space-y-4">
-          <h2 className="text-xl font-semibold text-gray-900">Dernier Audit (Racine)</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <h2 className="text-xl font-semibold text-gray-900">Général</h2>
+          
+          {/* Grille ajustée à 3 colonnes pour remplir l'espace */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
-              {/* Carte Aperçu */}
-              <Card className="overflow-hidden border-gray-200 shadow-sm relative group h-full bg-gray-100 flex items-center justify-center">
-                  {lastMainAudit?.screenshot ? (
-                      <img 
-                          src={lastMainAudit.screenshot} 
-                          alt="Screenshot" 
-                          className="absolute inset-0 w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105" 
-                      />
-                  ) : (
-                      <div className="flex flex-col items-center gap-2 text-gray-400">
-                          <ImageIcon className="h-8 w-8 opacity-50" />
-                          <span className="text-xs">Aucun aperçu</span>
-                      </div>
-                  )}
-              </Card>
-
-              {/* Carte Status */}
+              {/* Carte Status (Toujours aussi visible) */}
               {(() => {
                   const isUp = lastMainAudit?.status_code === 200
                   return (
@@ -132,8 +138,8 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                       </div>
                       <span className="text-sm font-medium text-gray-500">Sécurité</span>
                   </div>
-                  <div className="text-xl font-bold text-gray-900 truncate">{lastMainAudit?.https_valid ? "Sécurisé" : "Non sécurisé"}</div>
-                  <p className="text-xs text-muted-foreground mt-1">Certificat SSL valide</p>
+                  <div className="text-xl font-bold text-gray-900 truncate">{lastMainAudit?.https_valid ? "Sécurisé (HTTPS)" : "Non sécurisé"}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Certificat SSL valide détecté</p>
               </Card>
 
               {/* Carte Indexable */}
@@ -142,10 +148,10 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                       <div className={`p-2 rounded-full ${lastMainAudit?.indexable ? 'bg-purple-100 text-purple-600' : 'bg-orange-100 text-orange-600'}`}>
                           <Search className="h-5 w-5" />
                       </div>
-                      <span className="text-sm font-medium text-gray-500">SEO Tech</span>
+                      <span className="text-sm font-medium text-gray-500">SEO Technique</span>
                   </div>
-                  <div className="text-xl font-bold text-gray-900">{lastMainAudit?.indexable ? "Indexable" : "Bloqué"}</div>
-                  <p className="text-xs text-muted-foreground mt-1">Visible par Google</p>
+                  <div className="text-xl font-bold text-gray-900">{lastMainAudit?.indexable ? "Indexable" : "Bloqué (noindex)"}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Visible par les moteurs de recherche</p>
               </Card>
           </div>
         </section>
@@ -161,6 +167,7 @@ export default async function SiteDetailsPage({ params }: PageProps) {
            
            <Card className="border-gray-200 shadow-sm bg-gray-50/50">
               <CardContent className="p-6 space-y-8">
+                  {/* Formulaire Ajout */}
                   <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                       <h3 className="text-sm font-medium text-gray-900 mb-4 flex items-center gap-2"><Plus className="h-4 w-4 text-blue-600" /> Ajouter une nouvelle page</h3>
                       <form action={createPage} className="flex flex-col md:flex-row gap-4 items-end">
@@ -177,6 +184,7 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                       </form>
                   </div>
 
+                  {/* Liste Pages */}
                   <div className="space-y-3">
                       {pages && pages.length > 0 ? (
                           pages.map((page) => (
@@ -193,7 +201,6 @@ export default async function SiteDetailsPage({ params }: PageProps) {
       </div>
 
       {/* --- 4. BOUTON FLOTTANT FIXE --- */}
-      {/* Il est ici, en dehors du layout principal pour être sûr d'être au dessus de tout */}
       <RunAuditButton folderId={folder.id} />
       
     </div>
