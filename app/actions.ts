@@ -182,8 +182,8 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
   
   try {
     const [mobileRes, desktopRes] = await Promise.all([
-      fetch(`${baseUrl}&strategy=mobile`),
-      fetch(`${baseUrl}&strategy=desktop`)
+      fetch(`${baseUrl}&strategy=mobile`, { cache: 'no-store' }),
+      fetch(`${baseUrl}&strategy=desktop`, { cache: 'no-store' })
     ])
 
     const mobileData = await mobileRes.json()

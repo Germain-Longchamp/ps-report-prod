@@ -8,8 +8,8 @@ import { Trash2, ShieldCheck, Search, Globe, Plus, Activity, ImageIcon, Settings
 import { createPage } from '@/app/actions'
 import { RunAuditButton } from '@/components/RunAuditButton'
 import { PageRow } from '@/components/PageRow'
-import { SubmitButton } from '@/components/SubmitButton'
 import { SiteHeaderActions } from '@/components/SiteHeaderActions'
+import { AddPageForm } from '@/components/AddPageForm'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -176,29 +176,7 @@ export default async function SiteDetailsPage({ params }: PageProps) {
            
            <div className="grid gap-6">
                 {/* Bloc Ajout */}
-                <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                        <div className="p-1 bg-black text-white rounded">
-                            <Plus className="h-3 w-3" />
-                        </div>
-                        Suivre une nouvelle URL
-                    </h3>
-                    <form action={createPage} className="flex flex-col md:flex-row gap-3 items-end">
-                        <input type="hidden" name="folderId" value={id} />
-                        
-                        <div className="w-full md:w-1/3 space-y-1.5">
-                            <label htmlFor="name" className="text-xs font-semibold text-gray-500 ml-1">Nom (ex: Tarifs)</label>
-                            <Input id="name" name="name" placeholder="Nom de la page..." className="bg-gray-50 border-gray-200 focus:bg-white transition-all" />
-                        </div>
-                        
-                        <div className="w-full md:flex-1 space-y-1.5">
-                            <label htmlFor="url" className="text-xs font-semibold text-gray-500 ml-1">URL Complète</label>
-                            <Input id="url" name="url" placeholder="https://..." required className="bg-gray-50 border-gray-200 focus:bg-white transition-all" />
-                        </div>
-
-                        <SubmitButton />
-                    </form>
-                </div>
+                <AddPageForm folderId={id} />
 
                 {/* Liste des Pages */}
                 <div className="space-y-3">

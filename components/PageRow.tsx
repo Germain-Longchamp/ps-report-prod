@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { runPageSpeedAudit, deletePage } from '@/app/actions'
 import { AuditDetails } from './AuditDetails'
+import { toast } from "sonner"
 
 interface PageRowProps {
   page: any
@@ -26,9 +27,17 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
 
   const handleAudit = async () => {
     setIsAuditing(true)
+    const toastId = toast.loading("Analyse de la page en cours...") // Feedback immédiat
+
     const res = await runPageSpeedAudit(page.url, folderId, page.id)
+    
     setIsAuditing(false)
-    if (res.error) alert(res.error)
+
+    if (res.error) {
+        toast.error("Échec de l'audit", { id: toastId, description: res.error })
+    } else {
+        toast.success("Page analysée avec succès", { id: toastId })
+    }
   }
 
   const handleDelete = async () => {

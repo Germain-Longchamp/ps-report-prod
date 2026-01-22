@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { runGlobalAudit } from '@/app/actions' // On appelle la nouvelle action
+import { runGlobalAudit } from '@/app/actions'
 import { Button } from '@/components/ui/button'
-import { RefreshCcw, Loader2, Zap } from 'lucide-react'
+import { Loader2, Zap } from 'lucide-react'
+import { toast } from "sonner"
 
 interface RunAuditButtonProps {
   folderId: string
@@ -16,16 +17,35 @@ export function RunAuditButton({ folderId }: RunAuditButtonProps) {
     if (isLoading) return
     setIsLoading(true)
     
-    // Appel de l'action globale (Racine + Pages)
-    const result = await runGlobalAudit(folderId)
-    
-    setIsLoading(false)
+    // 1. DÉCLARATION DU TOAST ID (C'est cette ligne qui manquait ou était mal placée)
+    // On stocke l'ID du toast pour pouvoir le mettre à jour ensuite (succès ou erreur)
+    const toastId = toast.loading("Analyse globale en cours...")
 
-    if (result.error) {
-      alert("Erreur: " + result.error)
-    } else {
-      // Un petit feedback sympa (si vous aviez un composant Toast ce serait mieux)
-      console.log(result.success)
+    try {
+        // 2. Lancement de l'action serveur
+        const result = await runGlobalAudit(folderId)
+        
+        setIsLoading(false)
+
+        if (result.error) {
+          // Cas d'erreur : on met à jour le toast existant
+          toast.error("Erreur lors de l'analyse", {
+            id: toastId,
+            description: result.error
+          })
+        } else {
+          // Cas de succès : on met à jour le toast existant
+          toast.success("Analyse terminée !", {
+            id: toastId, // Ici la variable est maintenant bien définie
+            description: result.success
+          })
+        }
+    } catch (err) {
+        setIsLoading(false)
+        toast.error("Erreur technique", {
+            id: toastId,
+            description: "Une erreur imprévue est survenue."
+        })
     }
   }
 
@@ -44,7 +64,7 @@ export function RunAuditButton({ folderId }: RunAuditButtonProps) {
         {isLoading ? (
           <>
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            <span className="font-medium">Analyse en cours...</span>
+            <span className="font-medium">Analyse...</span>
           </>
         ) : (
           <>
