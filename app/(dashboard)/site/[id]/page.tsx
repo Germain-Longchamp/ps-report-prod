@@ -8,6 +8,7 @@ import { Trash2, ShieldCheck, Search, Globe, Plus, Activity, ImageIcon, Settings
 import { createPage } from '@/app/actions'
 import { RunAuditButton } from '@/components/RunAuditButton'
 import { PageRow } from '@/components/PageRow'
+import { SubmitButton } from '@/components/SubmitButton'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -191,15 +192,18 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                     </h3>
                     <form action={createPage} className="flex flex-col md:flex-row gap-3 items-end">
                         <input type="hidden" name="folderId" value={id} />
+                        
                         <div className="w-full md:w-1/3 space-y-1.5">
                             <label htmlFor="name" className="text-xs font-semibold text-gray-500 ml-1">Nom (ex: Tarifs)</label>
                             <Input id="name" name="name" placeholder="Nom de la page..." className="bg-gray-50 border-gray-200 focus:bg-white transition-all" />
                         </div>
+                        
                         <div className="w-full md:flex-1 space-y-1.5">
                             <label htmlFor="url" className="text-xs font-semibold text-gray-500 ml-1">URL Complète</label>
                             <Input id="url" name="url" placeholder="https://..." required className="bg-gray-50 border-gray-200 focus:bg-white transition-all" />
                         </div>
-                        <Button type="submit" className="bg-black text-white hover:bg-gray-800 shadow-sm">Ajouter</Button>
+
+                        <SubmitButton />
                     </form>
                 </div>
 

@@ -119,18 +119,42 @@ export async function createPage(formData: FormData) {
   
   if (!url || !folderId) return { error: "URL requise" }
 
-  const { error } = await supabase
+  // 1. Insérer la page et RÉCUPÉRER son ID (.select().single())
+  const { data: newPage, error } = await supabase
     .from('pages')
     .insert({
       url,
       name: name || "Page sans nom",
       folder_id: folderId
     })
+    .select() // Important : on veut récupérer l'objet créé
+    .single()
 
-  if (error) return { error: "Erreur lors de l'ajout de la page" }
-  
+  if (error || !newPage) {
+    console.error(error)
+    return { error: "Erreur lors de l'ajout de la page" }
+  }
+
+  // 2. Récupérer la Clé API (nécessaire pour l'audit)
+  // On refait une petite requête pour chercher la clé liée au dossier
+  const { data: folder } = await supabase
+    .from('folders')
+    .select('organization_id, organizations(google_api_key)')
+    .eq('id', folderId)
+    .single()
+
+  // @ts-ignore
+  const apiKey = folder?.organizations?.google_api_key || folder?.organizations?.[0]?.google_api_key
+
+  // 3. Lancer l'audit immédiatement (si on a une clé)
+  if (apiKey) {
+    // On attend la fin de l'audit avant de renvoyer la réponse au client
+    // Cela permet d'afficher les scores dès que la page se rafraîchit
+    await _performAudit(url, folderId, apiKey, newPage.id)
+  }
+
   revalidatePath(`/site/${folderId}`)
-  return { success: "Page ajoutée" }
+  return { success: "Page ajoutée et analysée !" }
 }
 
 export async function deletePage(pageId: string, folderId: string) {
