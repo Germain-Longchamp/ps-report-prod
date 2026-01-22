@@ -9,6 +9,7 @@ import { createPage } from '@/app/actions'
 import { RunAuditButton } from '@/components/RunAuditButton'
 import { PageRow } from '@/components/PageRow'
 import { SubmitButton } from '@/components/SubmitButton'
+import { SiteHeaderActions } from '@/components/SiteHeaderActions'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -98,15 +99,7 @@ export default async function SiteDetailsPage({ params }: PageProps) {
             </div>
             
             {/* C. Actions (Discrètes) */}
-            <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-900">
-                    <Settings className="h-4 w-4 mr-2" />
-                    Paramètres
-                  </Button>
-                  <Button variant="ghost" size="icon" className="text-gray-400 hover:text-red-600 hover:bg-red-50">
-                      <Trash2 className="h-4 w-4" />
-                  </Button>
-            </div>
+            <SiteHeaderActions folder={folder} />
         </header>
 
         {/* --- 2. VUE GÉNÉRAL --- */}

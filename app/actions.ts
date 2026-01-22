@@ -343,3 +343,50 @@ export async function runGlobalAudit(folderId: string) {
     return { error: "Erreur lors de l'analyse globale." }
   }
 }
+
+
+// --- 5. GESTION DU HEADER (UPDATE & DELETE) ---
+
+export async function updateFolder(formData: FormData) {
+  const supabase = await createClient()
+  
+  const folderId = formData.get('folderId') as string
+  const name = formData.get('name') as string
+  const rootUrl = formData.get('rootUrl') as string
+
+  if (!folderId || !name || !rootUrl) return { error: "Données incomplètes" }
+
+  const { error } = await supabase
+    .from('folders')
+    .update({ 
+        name, 
+        root_url: rootUrl 
+    })
+    .eq('id', folderId)
+
+  if (error) return { error: "Erreur lors de la mise à jour." }
+
+  revalidatePath(`/site/${folderId}`)
+  return { success: "Site mis à jour avec succès." }
+}
+
+export async function deleteFolder(folderId: string) {
+  const supabase = await createClient()
+  
+  // La suppression en cascade (cascade delete) dans Supabase devrait nettoyer les pages et audits
+  // Si ce n'est pas configuré en SQL, il faudrait supprimer les enfants avant.
+  // Supposons que votre table est bien faite (ON DELETE CASCADE).
+  
+  const { error } = await supabase
+    .from('folders')
+    .delete()
+    .eq('id', folderId)
+
+  if (error) {
+    console.error(error)
+    return { error: "Impossible de supprimer le dossier." }
+  }
+
+  // Redirection vers le dashboard après suppression
+  redirect('/')
+}
