@@ -15,6 +15,14 @@ interface PageProps {
   params: Promise<{ id: string }>
 }
 
+function getDaysUntilExpiry(dateString: string | null) {
+  if (!dateString) return null
+  const now = new Date()
+  const expiry = new Date(dateString)
+  const diffTime = expiry.getTime() - now.getTime()
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) // Différence en jours
+}
+
 export default async function SiteDetailsPage({ params }: PageProps) {
   const { id } = await params
   const supabase = await createClient()
@@ -135,17 +143,51 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                   )
               })()}
 
-              {/* Carte HTTPS */}
-              <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full hover:border-gray-300 transition-colors">
-                  <div className="flex items-center gap-3 mb-2">
-                      <div className={`p-2 rounded-lg ${lastMainAudit?.https_valid ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
-                          <ShieldCheck className="h-5 w-5" />
-                      </div>
-                      <span className="text-sm font-semibold text-gray-600">Sécurité SSL</span>
-                  </div>
-                  <div className="text-xl font-bold text-gray-900 truncate">{lastMainAudit?.https_valid ? "Sécurisé" : "Non sécurisé"}</div>
-                  <p className="text-xs text-muted-foreground mt-1">Certificat valide détecté</p>
-              </Card>
+              {/* Carte HTTPS & SSL */}
+              {(() => {
+                  const daysLeft = getDaysUntilExpiry(lastMainAudit?.ssl_expiry_date)
+                  const isSslValid = lastMainAudit?.https_valid
+                  
+                  // Logique de couleur pour l'expiration
+                  let expiryColor = "text-gray-500"
+                  let expiryText = "Certificat valide"
+                  
+                  if (daysLeft !== null) {
+                      if (daysLeft < 0) {
+                          expiryColor = "text-red-600 font-bold"
+                          expiryText = "Certificat EXPIRÉ"
+                      } else if (daysLeft < 14) {
+                          expiryColor = "text-red-600 font-bold"
+                          expiryText = `Expire dans ${daysLeft} jours !`
+                      } else if (daysLeft < 30) {
+                          expiryColor = "text-orange-600 font-medium"
+                          expiryText = `Expire dans ${daysLeft} jours`
+                      } else {
+                          expiryText = `Expire dans ${daysLeft} jours`
+                      }
+                  }
+                  
+
+                  return (
+                    <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full hover:border-gray-300 transition-colors">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className={`p-2 rounded-lg ${isSslValid ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                                <ShieldCheck className="h-5 w-5" />
+                            </div>
+                            <span className="text-sm font-semibold text-gray-600">Sécurité SSL</span>
+                        </div>
+                        
+                        <div className="text-xl font-bold text-gray-900 truncate">
+                            {isSslValid ? "Sécurisé" : "Non sécurisé"}
+                        </div>
+                        
+                        {/* Affichage de la date d'expiration */}
+                        <div className={`text-xs mt-1 ${expiryColor}`}>
+                            {daysLeft !== null ? expiryText : "Certificat SSL détecté"}
+                        </div>
+                    </Card>
+                  )
+              })()}
 
               {/* Carte Indexable */}
               <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full hover:border-gray-300 transition-colors">

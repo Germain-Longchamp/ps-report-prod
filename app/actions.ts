@@ -3,6 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import https from 'https'
 
 // --- 1. GESTION ORGANISATION & DOSSIERS ---
 
@@ -173,6 +174,41 @@ export async function deletePage(pageId: string, folderId: string) {
 
 // --- 4. MOTEUR D'AUDIT (GLOBAL & UNITAIRE) ---
 
+// Fonction utilitaire pour récupérer la date d'expiration SSL
+function getSSLExpiry(targetUrl: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const urlObj = new URL(targetUrl)
+      if (urlObj.protocol !== 'https:') return resolve(null)
+
+      const options = {
+        hostname: urlObj.hostname,
+        port: 443,
+        method: 'HEAD',
+        agent: new https.Agent({ maxCachedSessions: 0 }) // Pas de cache
+      }
+
+      const req = https.request(options, (res) => {
+        const cert = (res.connection as any).getPeerCertificate()
+        if (cert && cert.valid_to) {
+          resolve(new Date(cert.valid_to).toISOString())
+        } else {
+          resolve(null)
+        }
+      })
+
+      req.on('error', (e) => {
+        console.error("Erreur SSL Check:", e)
+        resolve(null)
+      })
+
+      req.end()
+    } catch (e) {
+      resolve(null)
+    }
+  })
+}
+
 /**
  * Fonction interne privée qui exécute la logique technique d'un audit.
  */
@@ -181,78 +217,93 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
   const baseUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${apiKey}&category=performance&category=accessibility&category=best-practices&category=seo`
   
   try {
-    const [mobileRes, desktopRes] = await Promise.all([
+    // 1. Parallélisation : Mobile + Desktop + Date SSL
+    // On utilise { cache: 'no-store' } pour éviter l'erreur "Single item size exceeds maxSize" de Next.js
+    const [mobileRes, desktopRes, sslDate] = await Promise.all([
       fetch(`${baseUrl}&strategy=mobile`, { cache: 'no-store' }),
-      fetch(`${baseUrl}&strategy=desktop`, { cache: 'no-store' })
+      fetch(`${baseUrl}&strategy=desktop`, { cache: 'no-store' }),
+      getSSLExpiry(url)
     ])
 
     const mobileData = await mobileRes.json()
     const desktopData = await desktopRes.json()
 
-    // 1. Erreur API Globale (DNS, Timeout, etc.)
+    // --- 2. GESTION DES ERREURS GLOBALES API (DNS, Timeout, 500 Google) ---
     if (mobileData.error || desktopData.error) {
-        console.error(`Erreur API Google sur ${url}:`, mobileData.error)
-        const errorCode = mobileData.error?.code || 500
+        const errorMsg = (mobileData.error?.message || desktopData.error?.message || "Erreur inconnue").toLowerCase()
+        console.error(`Erreur Google sur ${url}:`, errorMsg)
+
+        let errorCode = 500 // Par défaut erreur serveur
         
+        // On tente de deviner le code HTTP via le message d'erreur de Google
+        if (errorMsg.includes("404") || errorMsg.includes("not found")) errorCode = 404
+        else if (errorMsg.includes("403") || errorMsg.includes("forbidden")) errorCode = 403
+        else if (errorMsg.includes("500")) errorCode = 500
+        else if (errorMsg.includes("dns") || errorMsg.includes("resolve")) errorCode = 0 
+
+        // Sauvegarde de l'audit en échec
         await supabase.from('audits').insert({
             folder_id: folderId,
             page_id: pageId,
             url: url,
-            status_code: errorCode, 
+            status_code: errorCode,
+            https_valid: false,
+            ssl_expiry_date: null,
+            indexable: false,
+            screenshot: null,
             performance_score: 0,
             performance_desktop_score: 0,
             accessibility_score: 0,
             best_practices_score: 0,
             seo_score: 0,
             ttfb: 0,
-            report_json: mobileData
+            report_json: mobileData // On garde l'erreur pour debug
         })
-        return { success: true }
+
+        return { success: true } 
     }
 
-    // 2. Extraction du VRAI code HTTP depuis Lighthouse
+    // --- 3. EXTRACTION DU VRAI CODE HTTP (Lighthouse Analysis) ---
     const mAudits = mobileData.lighthouseResult.audits
     
     // L'audit 'http-status-code' contient le code réel si != 200
     const httpStatusAudit = mAudits['http-status-code']
-    let statusCode = 200 // Par défaut on est optimiste
+    let statusCode = 200 // Optimiste par défaut
 
-    // Si l'audit HTTP a échoué (score === 0), c'est qu'il y a une erreur (404, 500...)
     if (httpStatusAudit && httpStatusAudit.score === 0) {
-       // La displayValue contient souvent "404" ou "Unsuccessful HTTP status code (404)"
-       // On cherche le premier nombre de 3 chiffres
+       // Ex: "Unsuccessful HTTP status code (404)" -> On extrait "404"
        const match = httpStatusAudit.displayValue?.match(/\b\d{3}\b/)
        if (match) {
          statusCode = parseInt(match[0], 10)
        } else {
-         statusCode = 404 // Fallback si on arrive pas à lire le code mais que l'audit est KO
+         statusCode = 404
        }
     }
 
-    // 3. Extraction des scores (Uniquement si on n'est pas en erreur critique)
-    // Même en 404, Lighthouse peut donner des scores (sur la page 404), on les prend quand même
-    // sauf si vous préférez tout mettre à 0. Ici je les laisse, mais le PageRow affichera l'erreur.
-    
+    // --- 4. EXTRACTION DES SCORES ---
     const mCats = mobileData.lighthouseResult.categories
     const dCats = desktopData.lighthouseResult.categories
 
+    // Utilisation de ?.score pour éviter les crashs si une catégorie manque
     const perfMobile = Math.round(mCats['performance']?.score * 100 || 0)
     const perfDesktop = Math.round(dCats['performance']?.score * 100 || 0)
     const accessScore = Math.round(mCats['accessibility']?.score * 100 || 0)
     const bestPracticesScore = Math.round(mCats['best-practices']?.score * 100 || 0)
     const seoScore = Math.round(mCats['seo']?.score * 100 || 0)
-    const ttfb = Math.round(mAudits['server-response-time']?.numericValue || 0)
     
+    const ttfb = Math.round(mAudits['server-response-time']?.numericValue || 0)
     const screenshot = mAudits['final-screenshot']?.details?.data
     const isHttps = mAudits['is-on-https']?.score === 1
     const isCrawlable = mAudits['is-crawlable']?.score === 1
 
+    // --- 5. INSERTION EN BASE ---
     await supabase.from('audits').insert({
         folder_id: folderId,
         page_id: pageId,
         url: url,
-        status_code: statusCode, // <--- C'est ici que le 404 sera enfin stocké
+        status_code: statusCode, // 200, 404, 500...
         https_valid: isHttps,
+        ssl_expiry_date: sslDate, // La date récupérée via Node.js
         indexable: isCrawlable,
         screenshot: screenshot,
         performance_score: perfMobile,
@@ -261,7 +312,7 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
         best_practices_score: bestPracticesScore,
         seo_score: seoScore,
         ttfb: ttfb,
-        report_json: mobileData
+        report_json: mobileData // Le gros JSON pour le Side Panel
     })
 
     return { success: true }
