@@ -1,22 +1,25 @@
 'use client'
 
 import { useState } from 'react'
-import { ExternalLink, Trash2, Globe, Play, Loader2, Monitor, Smartphone, Zap } from 'lucide-react'
+import { ExternalLink, Trash2, Globe, Play, Loader2, Monitor, Smartphone, AlertTriangle, AlertOctagon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { runPageSpeedAudit, deletePage } from '@/app/actions'
-import { toast } from 'sonner' // ou alert si pas de toast
 
-// Type pour les données qu'on va recevoir
 interface PageRowProps {
   page: any
   folderId: string
-  lastAudit: any // L'audit le plus récent pour cette page
+  lastAudit: any
 }
 
 export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
   const [isAuditing, setIsAuditing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // 1. Détection de l'erreur
+  const statusCode = lastAudit?.status_code || 0
+  const isError = statusCode >= 400
+  const hasAudit = !!lastAudit
 
   const handleAudit = async () => {
     setIsAuditing(true)
@@ -29,27 +32,41 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
     if(!confirm("Supprimer cette page ?")) return
     setIsDeleting(true)
     await deletePage(page.id, folderId)
-    // Pas besoin de setIsDeleting(false) car le composant sera démonté
   }
 
-  // Helper pour les couleurs de scores (Rouge / Orange / Vert)
   const getScoreColor = (score: number) => {
-    if (!score && score !== 0) return "bg-gray-100 text-gray-400"
+    if (!score && score !== 0) return "bg-gray-100 text-gray-400 border-gray-200"
     if (score >= 90) return "bg-green-100 text-green-700 border-green-200"
     if (score >= 50) return "bg-orange-100 text-orange-700 border-orange-200"
     return "bg-red-100 text-red-700 border-red-200"
   }
 
+  // Helper pour le message d'erreur
+  const getErrorMessage = (code: number) => {
+    if (code === 404) return "Page introuvable (404)"
+    if (code === 500) return "Erreur serveur (500)"
+    if (code === 403) return "Accès interdit (403)"
+    return `Erreur HTTP ${code}`
+  }
+
   return (
-    <div className="group flex flex-col md:flex-row md:items-center justify-between p-5 rounded-xl border border-gray-200 bg-white shadow-sm hover:border-blue-200 transition-all gap-4">
+    <div className={`
+        group flex flex-col md:flex-row md:items-center justify-between p-5 rounded-xl border shadow-sm transition-all gap-4
+        ${isError 
+            ? 'bg-red-50/50 border-red-200 hover:border-red-300' // Style Erreur
+            : 'bg-white border-gray-200 hover:border-blue-300' // Style Normal
+        }
+    `}>
       
       {/* 1. Info URL & Nom */}
       <div className="flex items-start gap-4 md:w-1/4 min-w-[200px]">
-        <div className="mt-1 p-2.5 bg-blue-50 text-blue-600 rounded-lg shrink-0">
-          <Globe className="h-5 w-5" />
+        {/* Icône dynamique : Globe Bleu ou Alerte Rouge */}
+        <div className={`mt-1 p-2.5 rounded-lg shrink-0 ${isError ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+          {isError ? <AlertTriangle className="h-5 w-5" /> : <Globe className="h-5 w-5" />}
         </div>
+        
         <div className="overflow-hidden">
-          <div className="font-semibold text-gray-900 truncate">
+          <div className={`font-semibold truncate ${isError ? 'text-red-900' : 'text-gray-900'}`}>
             {page.name || "Page sans nom"}
           </div>
           <a href={page.url} target="_blank" className="text-xs text-gray-500 hover:text-blue-600 hover:underline flex items-center gap-1 mt-0.5 truncate">
@@ -59,58 +76,69 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
         </div>
       </div>
 
-      {/* 2. Les Scores (La partie intéressante) */}
-      <div className="flex-1 grid grid-cols-2 md:grid-cols-5 gap-3">
-        
-        {/* Perf Mobile */}
-        <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-gray-50">
-            <span className="text-[10px] uppercase text-gray-500 font-semibold mb-1 flex items-center gap-1">
-                <Smartphone className="h-3 w-3" /> Mobile
-            </span>
-            <Badge variant="outline" className={`text-lg font-bold px-2 ${getScoreColor(lastAudit?.performance_score)}`}>
-                {lastAudit?.performance_score ?? '-'}
-            </Badge>
-        </div>
+      {/* 2. Zone Centrale : SOIT les Scores, SOIT l'Erreur */}
+      <div className="flex-1">
+        {isError ? (
+            // --- A. AFFICHAGE ERREUR ---
+            <div className="flex items-center gap-2 text-red-600 bg-white/50 p-2 rounded-lg border border-red-100 w-fit">
+                <AlertOctagon className="h-4 w-4" />
+                <span className="font-bold text-sm">{getErrorMessage(statusCode)}</span>
+                <span className="text-xs text-red-400 ml-2 border-l border-red-200 pl-2">Pas de metrics disponibles</span>
+            </div>
+        ) : (
+            // --- B. AFFICHAGE SCORES (Si tout va bien) ---
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {/* Perf Mobile */}
+                <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-gray-50/50">
+                    <span className="text-[10px] uppercase text-gray-500 font-semibold mb-1 flex items-center gap-1">
+                        <Smartphone className="h-3 w-3" /> Mobile
+                    </span>
+                    <Badge variant="outline" className={`text-lg font-bold px-2 ${getScoreColor(lastAudit?.performance_score)}`}>
+                        {lastAudit?.performance_score ?? '-'}
+                    </Badge>
+                </div>
 
-        {/* Perf Desktop */}
-        <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-gray-50">
-             <span className="text-[10px] uppercase text-gray-500 font-semibold mb-1 flex items-center gap-1">
-                <Monitor className="h-3 w-3" /> Desktop
-            </span>
-            <Badge variant="outline" className={`text-lg font-bold px-2 ${getScoreColor(lastAudit?.performance_desktop_score)}`}>
-                {lastAudit?.performance_desktop_score ?? '-'}
-            </Badge>
-        </div>
+                {/* Perf Desktop */}
+                <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-gray-50/50">
+                    <span className="text-[10px] uppercase text-gray-500 font-semibold mb-1 flex items-center gap-1">
+                        <Monitor className="h-3 w-3" /> Desktop
+                    </span>
+                    <Badge variant="outline" className={`text-lg font-bold px-2 ${getScoreColor(lastAudit?.performance_desktop_score)}`}>
+                        {lastAudit?.performance_desktop_score ?? '-'}
+                    </Badge>
+                </div>
 
-        {/* SEO / Access / BP (Regroupés visuellement ou séparés) */}
-        <ScoreBox label="SEO" score={lastAudit?.seo_score} />
-        <ScoreBox label="Access." score={lastAudit?.accessibility_score} />
-        <ScoreBox label="Best Pr." score={lastAudit?.best_practices_score} />
+                <ScoreBox label="SEO" score={lastAudit?.seo_score} />
+                <ScoreBox label="Access." score={lastAudit?.accessibility_score} />
+                <ScoreBox label="Best Pr." score={lastAudit?.best_practices_score} />
+            </div>
+        )}
       </div>
 
-      {/* 3. TTFB & Actions */}
+      {/* 3. Actions & TTFB */}
       <div className="flex items-center gap-4 md:border-l md:pl-4 md:ml-2 border-gray-100">
         
-        {/* TTFB */}
-        <div className="hidden lg:flex flex-col items-end mr-2">
-            <span className="text-[10px] text-gray-400 uppercase font-semibold">TTFB</span>
-            <span className={`text-sm font-mono font-medium ${lastAudit?.ttfb > 600 ? 'text-red-500' : 'text-gray-700'}`}>
-                {lastAudit?.ttfb ? `${lastAudit.ttfb}ms` : '--'}
-            </span>
-        </div>
+        {/* TTFB (Masqué si erreur) */}
+        {!isError && (
+            <div className="hidden lg:flex flex-col items-end mr-2">
+                <span className="text-[10px] text-gray-400 uppercase font-semibold">TTFB</span>
+                <span className={`text-sm font-mono font-medium ${lastAudit?.ttfb > 600 ? 'text-red-500' : 'text-gray-700'}`}>
+                    {lastAudit?.ttfb ? `${lastAudit.ttfb}ms` : '--'}
+                </span>
+            </div>
+        )}
 
-        {/* Bouton Audit */}
+        {/* Bouton Relancer (Style modifié si erreur pour inciter à re-tester) */}
         <Button 
             size="sm" 
-            variant="outline" 
+            variant={isError ? "default" : "outline"} 
             onClick={handleAudit} 
             disabled={isAuditing}
-            className="h-9 w-9 p-0 rounded-full border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+            className={`h-9 w-9 p-0 rounded-full ${isError ? 'bg-red-100 text-red-600 hover:bg-red-200 border-red-200' : 'border-blue-200 hover:bg-blue-50 hover:text-blue-600'}`}
         >
             {isAuditing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 ml-0.5" />}
         </Button>
 
-        {/* Bouton Delete */}
         <Button 
             size="sm" 
             variant="ghost" 
@@ -125,16 +153,14 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
   )
 }
 
-// Petit composant helper pour les 3 petites boites
 function ScoreBox({ label, score }: { label: string, score: number }) {
-    // Logique couleur simplifiée
     let color = "text-gray-400"
     if (score >= 90) color = "text-green-600"
     else if (score >= 50) color = "text-orange-600"
     else if (score < 50 && score > 0) color = "text-red-600"
 
     return (
-        <div className="flex flex-col items-center justify-center">
+        <div className="flex flex-col items-center justify-center p-1">
             <span className="text-[10px] text-gray-400 uppercase font-semibold mb-1">{label}</span>
             <span className={`text-sm font-bold ${color}`}>
                 {score ?? '-'}

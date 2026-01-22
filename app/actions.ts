@@ -151,14 +151,12 @@ export async function deletePage(pageId: string, folderId: string) {
 
 /**
  * Fonction interne privée qui exécute la logique technique d'un audit.
- * Elle est appelée par runPageSpeedAudit (Unitaire) et runGlobalAudit (Global).
  */
 async function _performAudit(url: string, folderId: string, apiKey: string, pageId: string | null = null) {
   const supabase = await createClient()
   const baseUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${apiKey}&category=performance&category=accessibility&category=best-practices&category=seo`
   
   try {
-    // Parallélisation Mobile + Desktop
     const [mobileRes, desktopRes] = await Promise.all([
       fetch(`${baseUrl}&strategy=mobile`),
       fetch(`${baseUrl}&strategy=desktop`)
@@ -167,34 +165,69 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
     const mobileData = await mobileRes.json()
     const desktopData = await desktopRes.json()
 
+    // 1. Erreur API Globale (DNS, Timeout, etc.)
     if (mobileData.error || desktopData.error) {
-      console.error(`Erreur Google sur ${url}:`, mobileData.error || desktopData.error)
-      return { error: `Échec sur ${url}` }
+        console.error(`Erreur API Google sur ${url}:`, mobileData.error)
+        const errorCode = mobileData.error?.code || 500
+        
+        await supabase.from('audits').insert({
+            folder_id: folderId,
+            page_id: pageId,
+            url: url,
+            status_code: errorCode, 
+            performance_score: 0,
+            performance_desktop_score: 0,
+            accessibility_score: 0,
+            best_practices_score: 0,
+            seo_score: 0,
+            ttfb: 0,
+            report_json: mobileData
+        })
+        return { success: true }
     }
 
-    // Extraction des scores
-    const mCats = mobileData.lighthouseResult.categories
+    // 2. Extraction du VRAI code HTTP depuis Lighthouse
     const mAudits = mobileData.lighthouseResult.audits
+    
+    // L'audit 'http-status-code' contient le code réel si != 200
+    const httpStatusAudit = mAudits['http-status-code']
+    let statusCode = 200 // Par défaut on est optimiste
+
+    // Si l'audit HTTP a échoué (score === 0), c'est qu'il y a une erreur (404, 500...)
+    if (httpStatusAudit && httpStatusAudit.score === 0) {
+       // La displayValue contient souvent "404" ou "Unsuccessful HTTP status code (404)"
+       // On cherche le premier nombre de 3 chiffres
+       const match = httpStatusAudit.displayValue?.match(/\b\d{3}\b/)
+       if (match) {
+         statusCode = parseInt(match[0], 10)
+       } else {
+         statusCode = 404 // Fallback si on arrive pas à lire le code mais que l'audit est KO
+       }
+    }
+
+    // 3. Extraction des scores (Uniquement si on n'est pas en erreur critique)
+    // Même en 404, Lighthouse peut donner des scores (sur la page 404), on les prend quand même
+    // sauf si vous préférez tout mettre à 0. Ici je les laisse, mais le PageRow affichera l'erreur.
+    
+    const mCats = mobileData.lighthouseResult.categories
     const dCats = desktopData.lighthouseResult.categories
 
-    const perfMobile = Math.round(mCats['performance'].score * 100)
-    const perfDesktop = Math.round(dCats['performance'].score * 100)
-    const accessScore = Math.round(mCats['accessibility'].score * 100)
-    const bestPracticesScore = Math.round(mCats['best-practices'].score * 100)
-    const seoScore = Math.round(mCats['seo'].score * 100)
+    const perfMobile = Math.round(mCats['performance']?.score * 100 || 0)
+    const perfDesktop = Math.round(dCats['performance']?.score * 100 || 0)
+    const accessScore = Math.round(mCats['accessibility']?.score * 100 || 0)
+    const bestPracticesScore = Math.round(mCats['best-practices']?.score * 100 || 0)
+    const seoScore = Math.round(mCats['seo']?.score * 100 || 0)
     const ttfb = Math.round(mAudits['server-response-time']?.numericValue || 0)
     
     const screenshot = mAudits['final-screenshot']?.details?.data
     const isHttps = mAudits['is-on-https']?.score === 1
     const isCrawlable = mAudits['is-crawlable']?.score === 1
-    const statusCode = mobileData.lighthouseResult.environment?.networkUserAgent ? 200 : 0
 
-    // Sauvegarde en Base
     await supabase.from('audits').insert({
         folder_id: folderId,
         page_id: pageId,
         url: url,
-        status_code: statusCode,
+        status_code: statusCode, // <--- C'est ici que le 404 sera enfin stocké
         https_valid: isHttps,
         indexable: isCrawlable,
         screenshot: screenshot,
@@ -211,9 +244,10 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
 
   } catch (err) {
     console.error(`Crash audit ${url}:`, err)
-    return { error: "Erreur technique" }
+    return { error: "Erreur technique lors de l'appel." }
   }
 }
+
 
 // Action 1 : Audit Unitaire (Bouton Play dans la liste)
 export async function runPageSpeedAudit(url: string, folderId: string, pageId?: string) {
