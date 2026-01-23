@@ -3,7 +3,16 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Settings, LogOut, Folder, Plus, Loader2, Globe } from 'lucide-react'
+import { 
+  LayoutDashboard, 
+  Settings, 
+  LogOut, 
+  Folder, 
+  Plus, 
+  Loader2, 
+  Globe, 
+  AlertTriangle 
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createFolder } from '@/app/actions'
 import { toast } from "sonner"
@@ -29,12 +38,15 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
   const pathname = usePathname()
   const router = useRouter()
   
+  // États pour la PopUp et le chargement
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
+  // Helpers pour savoir si un lien est actif
   const isActive = (path: string) => pathname === path
   const isSiteActive = (id: string) => pathname === `/site/${id}`
 
+  // Gestion de la création de site
   const handleCreateSite = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setIsLoading(true)
@@ -49,9 +61,9 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
     if (res.error) {
         toast.error("Erreur", { id: toastId, description: res.error })
     } else if (res.success && res.id) {
-        setIsDialogOpen(false) 
+        setIsDialogOpen(false) // Ferme la popup
         toast.success("Site créé !", { id: toastId })
-        router.push(`/site/${res.id}`) 
+        router.push(`/site/${res.id}`) // Redirection vers le nouveau site
     }
   }
 
@@ -80,7 +92,19 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
               Vue d'ensemble
             </Link>
 
-            {/* L'onglet Paramètres a été supprimé d'ici */}
+            {/* --- NOUVEAU LIEN ALERTES --- */}
+            <Link 
+              href="/alerts" 
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                isActive('/alerts') 
+                  ? "bg-white/10 text-white" 
+                  : "text-zinc-400 hover:bg-white/5 hover:text-white"
+              )}
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Incidents
+            </Link>
           </div>
 
           {/* Liste des Sites */}
@@ -91,7 +115,7 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
               {/* BOUTON AJOUT (POPUP) */}
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
-                    <button className="text-zinc-500 hover:text-white transition-colors p-1 rounded hover:bg-white/10">
+                    <button className="text-zinc-500 hover:text-white transition-colors p-1 rounded hover:bg-white/10" title="Ajouter un site">
                         <Plus className="h-4 w-4" />
                     </button>
                 </DialogTrigger>
@@ -151,32 +175,22 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
 
         </nav>
 
-        {/* Footer User (MODIFIÉ) */}
+        {/* Footer User */}
         <div className="p-4 border-t border-white/10 bg-[#0A0A0A]">
           <div className="flex items-center gap-3">
-            {/* Avatar */}
             <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-white ring-1 ring-white/10 shrink-0">
                {userEmail?.charAt(0).toUpperCase()}
             </div>
-            
-            {/* Infos & Actions */}
             <div className="flex-1 min-w-0">
-               <p className="text-xs font-medium text-white truncate mb-0.5" title={userEmail}>
-                   {userEmail}
-               </p>
+               <p className="text-xs font-medium text-white truncate mb-0.5" title={userEmail}>{userEmail}</p>
                
-               {/* Ligne d'actions : Déconnexion + Paramètres */}
                <div className="flex items-center gap-3">
                    <form action="/auth/signout" method="post">
                      <button className="text-[10px] text-zinc-500 hover:text-red-400 flex items-center gap-1 transition-colors">
                        <LogOut className="h-3 w-3" /> Déconnexion
                      </button>
                    </form>
-
-                   {/* Séparateur discret */}
                    <span className="text-zinc-700 text-[10px]">|</span>
-
-                   {/* Bouton Paramètres (Roue crantée) */}
                    <Link 
                         href="/settings" 
                         title="Paramètres"
