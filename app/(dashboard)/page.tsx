@@ -1,69 +1,207 @@
-// app/(dashboard)/page.tsx
-import { CreateOrgForm } from "@/components/CreateOrgForm";
-import { SiteCard } from "@/components/SiteCard";
-import { createClient } from "@/utils/supabase/server";
-import { redirect } from "next/navigation";
+import { createClient } from '@/utils/supabase/server'
+import { redirect } from 'next/navigation'
+import Link from 'next/link'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Folder, FileText, AlertOctagon, Activity, Globe, Calendar } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+
+export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const supabase = await createClient()
 
-  if (!user) redirect("/login");
+  // 1. Auth Check
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
 
-  const { data: membershipData } = await supabase
-    .from("organization_members")
-    .select("organization_id, organizations(name)")
-    .eq("user_id", user.id)
-    .single();
+  // --- LOGIQUE HEADER (Date & Salutation) ---
+  const now = new Date()
+  const formattedDate = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const hour = now.getHours()
+  const greeting = hour >= 18 ? 'Bonsoir' : 'Bonjour'
+  // On récupère le nom avant l'@ ou l'email complet
+  const userName = user.email?.split('@')[0] || 'Utilisateur'
 
-  if (!membershipData) return <CreateOrgForm />;
+  // 2. Récupération des Données
+  const [foldersRes, pagesCountRes, pagesStatusRes, rootAuditsRes] = await Promise.all([
+    supabase.from('folders').select('*').order('created_at', { ascending: false }),
+    supabase.from('pages').select('*', { count: 'exact', head: true }),
+    supabase.from('pages').select('id, audits(status_code, created_at)'),
+    supabase.from('audits')
+      .select('folder_id, status_code, created_at')
+      .is('page_id', null)
+      .order('created_at', { ascending: false })
+  ])
 
-  const orgName = membershipData.organizations?.name || "Organisation";
-  let folders = null;
+  const folders = foldersRes.data || []
+  const totalPages = pagesCountRes.count || 0
 
-  if (membershipData.organization_id) {
-    const { data } = await supabase
-      .from("folders")
-      .select("id, name, root_url, status")
-      .eq("organization_id", membershipData.organization_id)
-      .order('created_at', { ascending: false });
-    folders = data;
-  }
+  // 3. Calcul des KPIs
+  let subPageErrorCount = 0
+  const pagesData = pagesStatusRes.data || []
+  pagesData.forEach((page: any) => {
+    if (page.audits?.length > 0) {
+        const last = page.audits.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+        if (last.status_code >= 400) subPageErrorCount++
+    }
+  })
 
-  // MODIFICATION ICI : On a retiré "flex-1 overflow-hidden" et le div interne "overflow-auto"
-  // On laisse le contenu couler naturellement, c'est le layout.tsx qui le scrolera.
+  // 4. Mappage des statuts racine
+  const folderStatusMap: Record<string, number> = {}
+  const rootAudits = rootAuditsRes.data || []
+  rootAudits.forEach((audit) => {
+      if (!folderStatusMap[audit.folder_id]) {
+          folderStatusMap[audit.folder_id] = audit.status_code
+      }
+  })
+
   return (
-    <div className="flex flex-col min-h-full"> 
-      <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-10">
-        <h1 className="text-xl font-semibold text-gray-800">Tableau de bord</h1>
-        <div className="text-sm text-gray-500 flex items-center gap-2">
-          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold">ORG</span>
-          {orgName}
+    <div className="p-8 max-w-7xl mx-auto space-y-12">
+      
+      {/* --- HEADER SYMPA --- */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
+        <div>
+            <div className="flex items-center gap-2 text-sm text-gray-500 font-medium mb-2 uppercase tracking-wide">
+                <Calendar className="h-4 w-4 text-blue-500" />
+                <span className="capitalize">{formattedDate}</span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
+                {greeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 capitalize">{userName}</span>
+            </h1>
+            <p className="text-gray-500 mt-2 max-w-xl text-lg">
+                Voici le rapport de performance et de disponibilité de vos infrastructures.
+            </p>
         </div>
-      </header>
+        
+        {/* Petit résumé rapide à droite (Optionnel mais joli) */}
+        <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-500 bg-gray-50 px-4 py-2 rounded-full border border-gray-100">
+            <div className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                Système opérationnel
+            </div>
+        </div>
+      </div>
 
-      <div className="p-8">
-        <div className="max-w-6xl mx-auto">
-          {!folders || folders.length === 0 ? (
-            <div className="border-2 border-dashed border-gray-300 rounded-lg h-64 flex flex-col items-center justify-center text-gray-400 gap-4">
-              <p>Bienvenue dans {orgName} !</p>
-              <p>Commencez par créer votre premier site via le bouton dans la barre latérale.</p>
-            </div>
+      {/* --- 1. BLOC KPIs --- */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Sites suivis</CardTitle>
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Folder className="h-4 w-4" /></div>
+            </CardHeader>
+            <CardContent>
+                <div className="text-3xl font-bold text-gray-900">{folders.length}</div>
+                <p className="text-xs text-gray-500 mt-1">Projets actifs</p>
+            </CardContent>
+        </Card>
+
+        <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Sous-pages</CardTitle>
+                <div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><FileText className="h-4 w-4" /></div>
+            </CardHeader>
+            <CardContent>
+                <div className="text-3xl font-bold text-gray-900">{totalPages}</div>
+                <p className="text-xs text-gray-500 mt-1">URLs surveillées</p>
+            </CardContent>
+        </Card>
+
+        <Card className={`border shadow-sm transition-all ${subPageErrorCount > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-gray-200 hover:shadow-md'}`}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className={`text-sm font-medium uppercase tracking-wider ${subPageErrorCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                    Incidents
+                </CardTitle>
+                <div className={`p-2 rounded-lg ${subPageErrorCount > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                    {subPageErrorCount > 0 ? <AlertOctagon className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                </div>
+            </CardHeader>
+            <CardContent>
+                <div className={`text-3xl font-bold ${subPageErrorCount > 0 ? 'text-red-700' : 'text-gray-900'}`}>
+                    {subPageErrorCount}
+                </div>
+                <p className={`text-xs mt-1 ${subPageErrorCount > 0 ? 'text-red-600/80 font-medium' : 'text-gray-500'}`}>
+                    {subPageErrorCount > 0 ? "Erreurs détectées" : "Tout est opérationnel"}
+                </p>
+            </CardContent>
+        </Card>
+      </div>
+
+      {/* --- 2. STATUTS SYSTÈMES --- */}
+      <div className="space-y-6">
+        <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <Activity className="h-5 w-5 text-gray-400" />
+            Statuts Systèmes
+        </h2>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {folders.length > 0 ? (
+             folders.map((folder) => {
+                const status = folderStatusMap[folder.id]
+                const isOnline = status === 200
+                const hasAudit = status !== undefined
+
+                return (
+                    <Link key={folder.id} href={`/site/${folder.id}`} className="group block h-full">
+                        <Card className={`h-full border transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer
+                            ${hasAudit 
+                                ? (isOnline ? 'border-gray-200 hover:border-emerald-400' : 'border-red-200 bg-red-50/30 hover:border-red-400') 
+                                : 'border-gray-200 hover:border-blue-400'
+                            }
+                        `}>
+                            <CardContent className="p-5 flex items-start gap-4">
+                                <div className={`shrink-0 mt-1 h-3 w-3 rounded-full shadow-sm ring-4 transition-all duration-500
+                                    ${hasAudit 
+                                        ? (isOnline ? 'bg-emerald-500 ring-emerald-100 group-hover:ring-emerald-200' : 'bg-red-500 ring-red-100 animate-pulse') 
+                                        : 'bg-gray-300 ring-gray-100'
+                                    }
+                                `} />
+
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <h3 className="font-bold text-gray-900 truncate text-sm">{folder.name}</h3>
+                                        {hasAudit && (
+                                            <Badge variant="outline" className={`text-[9px] h-4 px-1 font-mono
+                                                ${isOnline ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-red-700 bg-red-50 border-red-200'}
+                                            `}>
+                                                {status}
+                                            </Badge>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="text-xs text-gray-500 truncate flex items-center gap-1 group-hover:text-blue-600 transition-colors">
+                                        <Globe className="h-2.5 w-2.5" />
+                                        {folder.root_url}
+                                    </div>
+
+                                    <div className={`text-[10px] font-medium mt-3 
+                                        ${hasAudit 
+                                            ? (isOnline ? 'text-emerald-600' : 'text-red-600') 
+                                            : 'text-gray-400'
+                                        }
+                                    `}>
+                                        {hasAudit 
+                                            ? (isOnline ? "Opérationnel" : "Service perturbé") 
+                                            : "En attente..."
+                                        }
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </Link>
+                )
+             })
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {folders.map((folder) => (
-                <SiteCard 
-                  key={folder.id}
-                  id={folder.id}
-                  name={folder.name}
-                  url={folder.root_url}
-                  status={folder.status || 'unknown'}
-                />
-              ))}
-            </div>
+             <div className="col-span-full py-16 flex flex-col items-center justify-center text-center border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/30">
+                <div className="bg-white p-4 rounded-full shadow-sm mb-4">
+                    <Folder className="h-10 w-10 text-gray-300" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">Aucun système monitoré</h3>
+                <p className="text-gray-500 mt-2 max-w-sm">Ajoutez votre premier site pour voir son statut apparaître ici en temps réel.</p>
+             </div>
           )}
         </div>
       </div>
+
     </div>
-  );
+  )
 }

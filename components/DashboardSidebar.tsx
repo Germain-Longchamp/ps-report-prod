@@ -29,37 +29,28 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
   const pathname = usePathname()
   const router = useRouter()
   
-  // États pour la PopUp et le chargement
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
   const isActive = (path: string) => pathname === path
   const isSiteActive = (id: string) => pathname === `/site/${id}`
 
-  // Gestion de la création de site
   const handleCreateSite = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setIsLoading(true)
     
     const formData = new FormData(e.currentTarget)
-    // On garde le toast loading pour indiquer que ça travaille
     const toastId = toast.loading("Création du site en cours...")
 
     const res = await createFolder(formData)
 
-    setIsLoading(false) // On arrête le loader du bouton immédiatement
+    setIsLoading(false)
 
     if (res.error) {
         toast.error("Erreur", { id: toastId, description: res.error })
     } else if (res.success && res.id) {
-        // 1. On ferme la modale TOUT DE SUITE pour rendre la main à l'utilisateur
         setIsDialogOpen(false) 
-        
-        // 2. Feedback Succès
         toast.success("Site créé !", { id: toastId })
-        
-        // 3. Redirection fluide
-        // Grâce au revalidatePath du serveur, pas besoin de router.refresh() lourd
         router.push(`/site/${res.id}`) 
     }
   }
@@ -89,18 +80,7 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
               Vue d'ensemble
             </Link>
 
-            <Link 
-              href="/settings" 
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors",
-                isActive('/settings') 
-                  ? "bg-white/10 text-white" 
-                  : "text-zinc-400 hover:bg-white/5 hover:text-white"
-              )}
-            >
-              <Settings className="h-4 w-4" />
-              Paramètres
-            </Link>
+            {/* L'onglet Paramètres a été supprimé d'ici */}
           </div>
 
           {/* Liste des Sites */}
@@ -108,7 +88,7 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
             <div className="flex items-center justify-between px-3 mb-2">
               <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Mes Sites</h3>
               
-              {/* --- BOUTON AJOUT (POPUP) --- */}
+              {/* BOUTON AJOUT (POPUP) */}
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
                     <button className="text-zinc-500 hover:text-white transition-colors p-1 rounded hover:bg-white/10">
@@ -144,8 +124,6 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
                     </form>
                 </DialogContent>
               </Dialog>
-              {/* ----------------------------- */}
-
             </div>
             
             <div className="space-y-1">
@@ -173,19 +151,43 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
 
         </nav>
 
-        {/* Footer User */}
+        {/* Footer User (MODIFIÉ) */}
         <div className="p-4 border-t border-white/10 bg-[#0A0A0A]">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-white ring-1 ring-white/10">
+            {/* Avatar */}
+            <div className="h-8 w-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-white ring-1 ring-white/10 shrink-0">
                {userEmail?.charAt(0).toUpperCase()}
             </div>
+            
+            {/* Infos & Actions */}
             <div className="flex-1 min-w-0">
-               <p className="text-xs font-medium text-white truncate">{userEmail}</p>
-               <form action="/auth/signout" method="post">
-                 <button className="text-[10px] text-zinc-500 hover:text-red-400 flex items-center gap-1 mt-0.5 transition-colors">
-                   <LogOut className="h-3 w-3" /> Déconnexion
-                 </button>
-               </form>
+               <p className="text-xs font-medium text-white truncate mb-0.5" title={userEmail}>
+                   {userEmail}
+               </p>
+               
+               {/* Ligne d'actions : Déconnexion + Paramètres */}
+               <div className="flex items-center gap-3">
+                   <form action="/auth/signout" method="post">
+                     <button className="text-[10px] text-zinc-500 hover:text-red-400 flex items-center gap-1 transition-colors">
+                       <LogOut className="h-3 w-3" /> Déconnexion
+                     </button>
+                   </form>
+
+                   {/* Séparateur discret */}
+                   <span className="text-zinc-700 text-[10px]">|</span>
+
+                   {/* Bouton Paramètres (Roue crantée) */}
+                   <Link 
+                        href="/settings" 
+                        title="Paramètres"
+                        className={cn(
+                            "text-zinc-500 hover:text-white transition-colors",
+                            isActive('/settings') ? "text-white" : ""
+                        )}
+                   >
+                        <Settings className="h-3.5 w-3.5" />
+                   </Link>
+               </div>
             </div>
           </div>
         </div>
