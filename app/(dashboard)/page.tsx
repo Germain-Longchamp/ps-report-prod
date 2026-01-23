@@ -14,24 +14,29 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // --- LOGIQUE HEADER (Date & Salutation) ---
+  // --- LOGIQUE DATE & HEURE ---
   const now = new Date()
   const formattedDate = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const hour = now.getHours()
   const greeting = hour >= 18 ? 'Bonsoir' : 'Bonjour'
-  // On récupère le nom avant l'@ ou l'email complet
-  const userName = user.email?.split('@')[0] || 'Utilisateur'
 
-  // 2. Récupération des Données
-  const [foldersRes, pagesCountRes, pagesStatusRes, rootAuditsRes] = await Promise.all([
+  // 2. Récupération des Données (Dont le PROFIL utilisateur)
+  const [foldersRes, pagesCountRes, pagesStatusRes, rootAuditsRes, profileRes] = await Promise.all([
     supabase.from('folders').select('*').order('created_at', { ascending: false }),
     supabase.from('pages').select('*', { count: 'exact', head: true }),
     supabase.from('pages').select('id, audits(status_code, created_at)'),
     supabase.from('audits')
       .select('folder_id, status_code, created_at')
       .is('page_id', null)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false }),
+    // Récupération du profil pour le prénom
+    supabase.from('profiles').select('first_name').eq('id', user.id).single()
   ])
+
+  // Gestion du Nom d'affichage
+  // Priorité : Prénom en base > Partie gauche de l'email > "Utilisateur"
+  const profile = profileRes.data
+  const userName = profile?.first_name || user.email?.split('@')[0] || 'Utilisateur'
 
   const folders = foldersRes.data || []
   const totalPages = pagesCountRes.count || 0
@@ -58,7 +63,7 @@ export default async function DashboardPage() {
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-12">
       
-      {/* --- HEADER SYMPA --- */}
+      {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
         <div>
             <div className="flex items-center gap-2 text-sm text-gray-500 font-medium mb-2 uppercase tracking-wide">
@@ -73,7 +78,7 @@ export default async function DashboardPage() {
             </p>
         </div>
         
-        {/* Petit résumé rapide à droite (Optionnel mais joli) */}
+        {/* Résumé rapide */}
         <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-500 bg-gray-50 px-4 py-2 rounded-full border border-gray-100">
             <div className="flex items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -84,6 +89,8 @@ export default async function DashboardPage() {
 
       {/* --- 1. BLOC KPIs --- */}
       <div className="grid gap-4 md:grid-cols-3">
+        
+        {/* Carte 1 : Sites */}
         <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Sites suivis</CardTitle>
@@ -95,6 +102,7 @@ export default async function DashboardPage() {
             </CardContent>
         </Card>
 
+        {/* Carte 2 : Sous-pages */}
         <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Sous-pages</CardTitle>
@@ -106,24 +114,28 @@ export default async function DashboardPage() {
             </CardContent>
         </Card>
 
-        <Card className={`border shadow-sm transition-all ${subPageErrorCount > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-gray-200 hover:shadow-md'}`}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className={`text-sm font-medium uppercase tracking-wider ${subPageErrorCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                    Incidents
-                </CardTitle>
-                <div className={`p-2 rounded-lg ${subPageErrorCount > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                    {subPageErrorCount > 0 ? <AlertOctagon className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
-                </div>
-            </CardHeader>
-            <CardContent>
-                <div className={`text-3xl font-bold ${subPageErrorCount > 0 ? 'text-red-700' : 'text-gray-900'}`}>
-                    {subPageErrorCount}
-                </div>
-                <p className={`text-xs mt-1 ${subPageErrorCount > 0 ? 'text-red-600/80 font-medium' : 'text-gray-500'}`}>
-                    {subPageErrorCount > 0 ? "Erreurs détectées" : "Tout est opérationnel"}
-                </p>
-            </CardContent>
-        </Card>
+        {/* Carte 3 : Incidents (CLIQUABLE) */}
+        <Link href="/alerts" className="block h-full">
+            <Card className={`h-full border shadow-sm transition-all cursor-pointer ${subPageErrorCount > 0 ? 'bg-red-50 border-red-100 hover:border-red-300' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className={`text-sm font-medium uppercase tracking-wider ${subPageErrorCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                        Incidents
+                    </CardTitle>
+                    <div className={`p-2 rounded-lg ${subPageErrorCount > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                        {subPageErrorCount > 0 ? <AlertOctagon className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    <div className={`text-3xl font-bold ${subPageErrorCount > 0 ? 'text-red-700' : 'text-gray-900'}`}>
+                        {subPageErrorCount}
+                    </div>
+                    <p className={`text-xs mt-1 ${subPageErrorCount > 0 ? 'text-red-600/80 font-medium' : 'text-gray-500'}`}>
+                        {subPageErrorCount > 0 ? "Erreurs détectées (Cliquez pour voir)" : "Tout est opérationnel"}
+                    </p>
+                </CardContent>
+            </Card>
+        </Link>
+        
       </div>
 
       {/* --- 2. STATUTS SYSTÈMES --- */}

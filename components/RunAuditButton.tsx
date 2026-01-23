@@ -17,26 +17,21 @@ export function RunAuditButton({ folderId }: RunAuditButtonProps) {
     if (isLoading) return
     setIsLoading(true)
     
-    // 1. DÉCLARATION DU TOAST ID (C'est cette ligne qui manquait ou était mal placée)
-    // On stocke l'ID du toast pour pouvoir le mettre à jour ensuite (succès ou erreur)
     const toastId = toast.loading("Analyse globale en cours...")
 
     try {
-        // 2. Lancement de l'action serveur
         const result = await runGlobalAudit(folderId)
         
         setIsLoading(false)
 
         if (result.error) {
-          // Cas d'erreur : on met à jour le toast existant
           toast.error("Erreur lors de l'analyse", {
             id: toastId,
             description: result.error
           })
         } else {
-          // Cas de succès : on met à jour le toast existant
           toast.success("Analyse terminée !", {
-            id: toastId, // Ici la variable est maintenant bien définie
+            id: toastId,
             description: result.success
           })
         }
@@ -54,22 +49,22 @@ export function RunAuditButton({ folderId }: RunAuditButtonProps) {
       <Button 
         onClick={handleGlobalAudit} 
         disabled={isLoading}
-        size="lg"
         className={`
-            h-14 px-6 rounded-full shadow-xl transition-all duration-300
-            ${isLoading ? 'bg-gray-800 cursor-not-allowed' : 'bg-black hover:bg-gray-900 hover:scale-105'}
-            text-white border border-gray-700/50
+            h-12 px-6 rounded-full shadow-2xl transition-all duration-300
+            ${isLoading ? 'bg-gray-800 cursor-not-allowed' : 'bg-black hover:bg-gray-900 hover:scale-105 active:scale-95'}
+            text-white flex items-center gap-2
         `}
       >
         {isLoading ? (
           <>
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            <span className="font-medium">Analyse...</span>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="font-medium text-sm">Analyse...</span>
           </>
         ) : (
           <>
-            <Zap className="mr-2 h-5 w-5 fill-yellow-400 text-yellow-400" />
-            <span className="font-bold text-lg">Lancer une analyse complète</span>
+            {/* J'ai gardé ton éclair jaune, c'est sympa */}
+            <Zap className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+            <span className="font-semibold text-sm">Lancer l'audit</span>
           </>
         )}
       </Button>
