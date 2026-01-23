@@ -37,8 +37,7 @@ export async function createFolder(formData: FormData) {
 
   if (!name || !rootUrl) return { error: "Nom et URL requis." }
 
-  // 2. RÉCUPÉRER L'ORGANISATION ID VIA LA TABLE "organization_members"
-  // C'est ici que ça bloquait avant. On regarde dans la table de liaison.
+  // 2. Récupérer l'organisation
   const { data: memberLink, error: memberError } = await supabase
     .from('organization_members') 
     .select('organization_id')
@@ -47,19 +46,18 @@ export async function createFolder(formData: FormData) {
     .single()
 
   if (memberError || !memberLink) {
-    console.error("Erreur Member:", memberError)
     return { error: "Vous n'êtes lié à aucune organisation." }
   }
 
-  // 3. Insertion du dossier
+  // 3. Insertion
   const { data, error } = await supabase
     .from('folders')
     .insert({ 
         name, 
         root_url: rootUrl,
-        organization_id: memberLink.organization_id, // L'ID récupéré juste au-dessus
-        created_by: user.id, // On remplit aussi ce champ car il existe dans votre table
-        status: 'active' // On met un statut par défaut propre
+        organization_id: memberLink.organization_id,
+        created_by: user.id,
+        status: 'active'
     })
     .select()
     .single()
@@ -69,8 +67,57 @@ export async function createFolder(formData: FormData) {
     return { error: "Impossible de créer le site." }
   }
 
+  // --- LE FIX EST ICI ---
+  // On invalide le cache du Layout (la Sidebar) pour tout le monde
+  revalidatePath('/', 'layout') 
+
   return { success: true, id: data.id }
 }
+
+export async function updateFolder(formData: FormData) {
+  const supabase = await createClient()
+  
+  const folderId = formData.get('folderId') as string
+  const name = formData.get('name') as string
+  const rootUrl = formData.get('rootUrl') as string
+
+  if (!folderId || !name || !rootUrl) return { error: "Données incomplètes" }
+
+  const { error } = await supabase
+    .from('folders')
+    .update({ 
+        name, 
+        root_url: rootUrl 
+    })
+    .eq('id', folderId)
+
+  if (error) return { error: "Erreur lors de la mise à jour." }
+
+  revalidatePath(`/site/${folderId}`)
+  return { success: "Site mis à jour avec succès." }
+}
+
+export async function deleteFolder(folderId: string) {
+  const supabase = await createClient()
+  
+  // 1. Suppression
+  const { error } = await supabase
+    .from('folders')
+    .delete()
+    .eq('id', folderId)
+
+  if (error) {
+    console.error(error)
+    return { error: "Impossible de supprimer le dossier." }
+  }
+
+  // 2. LE FIX EST ICI : On force la mise à jour de la Sidebar (Layout)
+  revalidatePath('/', 'layout')
+
+  // 3. Redirection vers l'accueil
+  redirect('/')
+}
+
 
 // --- 2. GESTION PROFILS & SETTINGS ---
 
@@ -430,49 +477,3 @@ export async function getAuditDetails(auditId: string) {
   return { report: data.report_json }
 }
 
-
-// --- 5. GESTION DU HEADER (UPDATE & DELETE) ---
-
-export async function updateFolder(formData: FormData) {
-  const supabase = await createClient()
-  
-  const folderId = formData.get('folderId') as string
-  const name = formData.get('name') as string
-  const rootUrl = formData.get('rootUrl') as string
-
-  if (!folderId || !name || !rootUrl) return { error: "Données incomplètes" }
-
-  const { error } = await supabase
-    .from('folders')
-    .update({ 
-        name, 
-        root_url: rootUrl 
-    })
-    .eq('id', folderId)
-
-  if (error) return { error: "Erreur lors de la mise à jour." }
-
-  revalidatePath(`/site/${folderId}`)
-  return { success: "Site mis à jour avec succès." }
-}
-
-export async function deleteFolder(folderId: string) {
-  const supabase = await createClient()
-  
-  // La suppression en cascade (cascade delete) dans Supabase devrait nettoyer les pages et audits
-  // Si ce n'est pas configuré en SQL, il faudrait supprimer les enfants avant.
-  // Supposons que votre table est bien faite (ON DELETE CASCADE).
-  
-  const { error } = await supabase
-    .from('folders')
-    .delete()
-    .eq('id', folderId)
-
-  if (error) {
-    console.error(error)
-    return { error: "Impossible de supprimer le dossier." }
-  }
-
-  // Redirection vers le dashboard après suppression
-  redirect('/')
-}

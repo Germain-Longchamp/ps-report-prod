@@ -42,20 +42,25 @@ export function DashboardSidebar({ userEmail, folders }: DashboardSidebarProps) 
     setIsLoading(true)
     
     const formData = new FormData(e.currentTarget)
+    // On garde le toast loading pour indiquer que ça travaille
     const toastId = toast.loading("Création du site en cours...")
 
     const res = await createFolder(formData)
 
+    setIsLoading(false) // On arrête le loader du bouton immédiatement
+
     if (res.error) {
-        setIsLoading(false)
         toast.error("Erreur", { id: toastId, description: res.error })
     } else if (res.success && res.id) {
-        // Succès !
-        setIsDialogOpen(false) // Ferme la popup
-        toast.success("Site créé avec succès !", { id: toastId })
-        router.push(`/site/${res.id}`) // Redirection vers la nouvelle page
-        router.refresh() // Rafraîchit les données de la sidebar
-        setIsLoading(false)
+        // 1. On ferme la modale TOUT DE SUITE pour rendre la main à l'utilisateur
+        setIsDialogOpen(false) 
+        
+        // 2. Feedback Succès
+        toast.success("Site créé !", { id: toastId })
+        
+        // 3. Redirection fluide
+        // Grâce au revalidatePath du serveur, pas besoin de router.refresh() lourd
+        router.push(`/site/${res.id}`) 
     }
   }
 
