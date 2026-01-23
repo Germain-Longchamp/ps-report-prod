@@ -17,7 +17,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { toast } from "sonner"
-import { runPageSpeedAudit, deletePage } from '@/app/actions'
+import { runPageSpeedAudit, deletePage, getAuditDetails } from '@/app/actions' // <-- Import getAuditDetails
 import { AuditDetails } from './AuditDetails'
 
 interface PageRowProps {
@@ -29,12 +29,30 @@ interface PageRowProps {
 export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
   const [isAuditing, setIsAuditing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  
+  // Nouveaux états pour le Lazy Loading du rapport
+  const [reportJson, setReportJson] = useState<any>(null)
+  const [isLoadingReport, setIsLoadingReport] = useState(false)
 
-  // 1. Détection de l'erreur (Code >= 400)
+  // 1. Détection de l'erreur
   const statusCode = lastAudit?.status_code || 0
   const isError = statusCode >= 400
-  // Si on a un rapport JSON complet, on peut afficher les détails
-  const hasReport = !!lastAudit?.report_json
+  // On considère qu'on a un audit valide s'il a un ID, même sans le JSON chargé
+  const hasAudit = !!lastAudit?.id
+
+  // --- ACTION : CHARGER LE DÉTAIL (Lazy Load) ---
+  const handleOpenReport = async (open: boolean) => {
+    if (open && !reportJson && lastAudit?.id) {
+        setIsLoadingReport(true)
+        const res = await getAuditDetails(lastAudit.id)
+        if (res.report) {
+            setReportJson(res.report)
+        } else {
+            toast.error("Impossible de charger le détail du rapport.")
+        }
+        setIsLoadingReport(false)
+    }
+  }
 
   // --- ACTION : AUDIT ---
   const handleAudit = async () => {
@@ -44,6 +62,8 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
     const res = await runPageSpeedAudit(page.url, folderId, page.id)
     
     setIsAuditing(false)
+    // On reset le rapport en cache pour forcer le rechargement au prochain clic
+    setReportJson(null) 
 
     if (res.error) {
         toast.error("Échec de l'audit", { id: toastId, description: res.error })
@@ -55,12 +75,10 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
   // --- ACTION : SUPPRESSION ---
   const handleDelete = async () => {
     setIsDeleting(true)
-    // On ferme la modale automatiquement via le clic, on lance le toast
     const toastId = toast.loading("Suppression de la page...")
 
     const res = await deletePage(page.id, folderId)
     
-    // Si succès, le composant sera démonté par le revalidatePath du parent
     if (res?.error) {
         setIsDeleting(false)
         toast.error("Impossible de supprimer", { id: toastId, description: res.error })
@@ -147,7 +165,7 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
       {/* 3. Actions */}
       <div className="flex items-center gap-4 md:border-l md:pl-4 md:ml-2 border-gray-100">
         
-        {/* TTFB (Masqué si erreur) */}
+        {/* TTFB */}
         {!isError && (
              <div className="hidden lg:flex flex-col items-end mr-2">
                 <span className="text-[10px] text-gray-400 uppercase font-semibold">TTFB</span>
@@ -159,9 +177,9 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
 
         <div className="flex items-center gap-2">
             
-            {/* BOUTON DÉTAIL (SHEET) - Uniquement si rapport dispo et pas d'erreur critique */}
-            {hasReport && !isError && (
-                <Sheet>
+            {/* BOUTON DÉTAIL (SHEET) - AVEC LAZY LOADING */}
+            {hasAudit && !isError && (
+                <Sheet onOpenChange={handleOpenReport}>
                     <SheetTrigger asChild>
                         <Button size="sm" variant="ghost" className="h-9 px-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50">
                             <LayoutList className="h-4 w-4 mr-2" />
@@ -187,13 +205,25 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
                         </SheetHeader>
                         
                         <div className="flex-1 overflow-hidden bg-white relative">
-                             <AuditDetails report={lastAudit.report_json} />
+                             {/* GESTION DU LOADING */}
+                             {isLoadingReport ? (
+                                 <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+                                     <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                                     <p className="text-sm">Chargement du rapport complet...</p>
+                                 </div>
+                             ) : reportJson ? (
+                                 <AuditDetails report={reportJson} />
+                             ) : (
+                                 <div className="flex items-center justify-center h-full text-gray-400">
+                                     Aucune donnée chargée.
+                                 </div>
+                             )}
                         </div>
                     </SheetContent>
                 </Sheet>
             )}
 
-            {/* BOUTON RELANCER AUDIT */}
+            {/* BOUTON RELANCER */}
             <Button 
                 size="sm" 
                 variant={isError ? "default" : "outline"} 
@@ -204,7 +234,7 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
                 {isAuditing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 ml-0.5" />}
             </Button>
 
-            {/* BOUTON SUPPRIMER (ALERT DIALOG) */}
+            {/* BOUTON SUPPRIMER */}
             <AlertDialog>
                 <AlertDialogTrigger asChild>
                     <Button 
@@ -244,7 +274,7 @@ export function PageRow({ page, folderId, lastAudit }: PageRowProps) {
   )
 }
 
-// Petit composant helper pour les 3 petites boites de score
+// Helper pour les scores (inchangé)
 function ScoreBox({ label, score }: { label: string, score: number }) {
     let color = "text-gray-400"
     if (score >= 90) color = "text-green-600"

@@ -1,11 +1,8 @@
 import { createClient } from '@/utils/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card, CardContent } from '@/components/ui/card'
-import { Trash2, ShieldCheck, Search, Globe, Plus, Activity, ImageIcon, Settings, ChevronRight, ExternalLink } from 'lucide-react'
-import { createPage } from '@/app/actions'
+import { Card } from '@/components/ui/card'
+import { ShieldCheck, Search, Globe, Activity, ImageIcon, ChevronRight, ExternalLink } from 'lucide-react'
 import { RunAuditButton } from '@/components/RunAuditButton'
 import { PageRow } from '@/components/PageRow'
 import { SiteHeaderActions } from '@/components/SiteHeaderActions'
@@ -39,15 +36,34 @@ export default async function SiteDetailsPage({ params }: PageProps) {
 
   if (!folder) notFound()
 
+  // 2. Pages
   const { data: pages } = await supabase
     .from('pages')
     .select('*')
     .eq('folder_id', id)
     .order('created_at', { ascending: true })
 
+  // 3. Audits (OPTIMISÉ : On ne charge PAS report_json ici)
   const { data: allAudits } = await supabase
     .from('audits')
-    .select('*')
+    .select(`
+      id,
+      created_at,
+      folder_id,
+      page_id,
+      url,
+      status_code,
+      https_valid,
+      indexable,
+      screenshot,
+      performance_score,
+      performance_desktop_score,
+      accessibility_score,
+      best_practices_score,
+      seo_score,
+      ttfb,
+      ssl_expiry_date
+    `)
     .eq('folder_id', id)
     .order('created_at', { ascending: false })
 
@@ -58,11 +74,11 @@ export default async function SiteDetailsPage({ params }: PageProps) {
     <div className="relative min-h-screen bg-gray-50/30">
       <div className="p-10 w-full max-w-6xl mx-auto space-y-12 pb-32">
         
-        {/* --- 1. HEADER MODERNE (Sans bordure, aéré) --- */}
+        {/* --- 1. HEADER MODERNE --- */}
         <header className="flex flex-col md:flex-row md:items-start justify-between gap-6">
             
             <div className="flex gap-6">
-                {/* A. Miniature (Style "App Icon") */}
+                {/* A. Miniature */}
                 <div className="h-20 w-20 shrink-0 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden relative flex items-center justify-center p-1">
                     {lastMainAudit?.screenshot ? (
                         <img 
@@ -77,9 +93,8 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                     )}
                 </div>
 
-                {/* B. Textes & Breadcrumbs */}
+                {/* B. Textes */}
                 <div className="space-y-3">
-                    {/* Fil d'ariane subtil */}
                     <nav className="flex items-center gap-1 text-sm text-muted-foreground font-medium">
                         <Link href="/" className="hover:text-gray-900 transition-colors">Mes Sites</Link>
                         <ChevronRight className="h-4 w-4 text-gray-300" />
@@ -91,7 +106,6 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                             {folder.name}
                         </h1>
                         
-                        {/* URL Badge (Style Pastille) */}
                         <a 
                             href={folder.root_url} 
                             target="_blank" 
@@ -106,7 +120,7 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                 </div>
             </div>
             
-            {/* C. Actions (Discrètes) */}
+            {/* C. Actions */}
             <SiteHeaderActions folder={folder} />
         </header>
 
@@ -148,7 +162,7 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                   const daysLeft = getDaysUntilExpiry(lastMainAudit?.ssl_expiry_date)
                   const isSslValid = lastMainAudit?.https_valid
                   
-                  // Logique de couleur pour l'expiration
+                  // Logique de couleur
                   let expiryColor = "text-gray-500"
                   let expiryText = "Certificat valide"
                   
@@ -167,7 +181,6 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                       }
                   }
                   
-
                   return (
                     <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full hover:border-gray-300 transition-colors">
                         <div className="flex items-center gap-3 mb-2">
@@ -181,7 +194,6 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                             {isSslValid ? "Sécurisé" : "Non sécurisé"}
                         </div>
                         
-                        {/* Affichage de la date d'expiration */}
                         <div className={`text-xs mt-1 ${expiryColor}`}>
                             {daysLeft !== null ? expiryText : "Certificat SSL détecté"}
                         </div>
@@ -210,7 +222,6 @@ export default async function SiteDetailsPage({ params }: PageProps) {
                   <h2 className="text-xl font-bold text-gray-900">Pages internes</h2>
                   <p className="text-sm text-gray-500 mt-1">Monitoring individuel des pages clés.</p>
               </div>
-              {/* Optionnel : Compteur de pages */}
               <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-600">
                 {pages?.length || 0} URL(s)
               </span>

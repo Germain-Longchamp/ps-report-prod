@@ -23,35 +23,53 @@ export async function createOrganization(formData: FormData) {
   revalidatePath('/')
 }
 
+// --- 6. CRÉATION DE DOSSIER (SITE) ---
+
 export async function createFolder(formData: FormData) {
   const supabase = await createClient()
+  
+  // 1. Vérification Auth
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  if (!user) return { error: "Non connecté." }
 
   const name = formData.get('name') as string
-  const url = formData.get('url') as string
+  const rootUrl = formData.get('rootUrl') as string
 
-  const { data: member } = await supabase
-    .from('organization_members')
+  if (!name || !rootUrl) return { error: "Nom et URL requis." }
+
+  // 2. RÉCUPÉRER L'ORGANISATION ID VIA LA TABLE "organization_members"
+  // C'est ici que ça bloquait avant. On regarde dans la table de liaison.
+  const { data: memberLink, error: memberError } = await supabase
+    .from('organization_members') 
     .select('organization_id')
     .eq('user_id', user.id)
+    .limit(1)
     .single()
 
-  if (!member) return { error: "Aucune organisation trouvée" }
+  if (memberError || !memberLink) {
+    console.error("Erreur Member:", memberError)
+    return { error: "Vous n'êtes lié à aucune organisation." }
+  }
 
-  const { error } = await supabase
+  // 3. Insertion du dossier
+  const { data, error } = await supabase
     .from('folders')
-    .insert({
-      name: name,
-      root_url: url,
-      organization_id: member.organization_id,
-      created_by: user.id
+    .insert({ 
+        name, 
+        root_url: rootUrl,
+        organization_id: memberLink.organization_id, // L'ID récupéré juste au-dessus
+        created_by: user.id, // On remplit aussi ce champ car il existe dans votre table
+        status: 'active' // On met un statut par défaut propre
     })
+    .select()
+    .single()
 
-  if (error) return { error: "Erreur base de données" }
+  if (error) {
+    console.error("Erreur Insert Folder:", error)
+    return { error: "Impossible de créer le site." }
+  }
 
-  revalidatePath('/')
-  return { success: true }
+  return { success: true, id: data.id }
 }
 
 // --- 2. GESTION PROFILS & SETTINGS ---
@@ -393,6 +411,23 @@ export async function runGlobalAudit(folderId: string) {
   } catch (e) {
     return { error: "Erreur lors de l'analyse globale." }
   }
+}
+
+// ---RÉCUPÉRATION DU DÉTAIL AUDIT (LAZY LOAD) ---
+
+export async function getAuditDetails(auditId: string) {
+  const supabase = await createClient()
+  
+  // On ne récupère QUE la colonne report_json pour cet ID précis
+  const { data, error } = await supabase
+    .from('audits')
+    .select('report_json')
+    .eq('id', auditId)
+    .single()
+
+  if (error || !data) return { error: "Rapport introuvable" }
+  
+  return { report: data.report_json }
 }
 
 
