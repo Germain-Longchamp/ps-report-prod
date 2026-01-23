@@ -23,8 +23,6 @@ export async function createOrganization(formData: FormData) {
   revalidatePath('/')
 }
 
-// --- 6. CRÉATION DE DOSSIER (SITE) ---
-
 export async function createFolder(formData: FormData) {
   const supabase = await createClient()
   
@@ -67,7 +65,6 @@ export async function createFolder(formData: FormData) {
     return { error: "Impossible de créer le site." }
   }
 
-  // --- LE FIX EST ICI ---
   // On invalide le cache du Layout (la Sidebar) pour tout le monde
   revalidatePath('/', 'layout') 
 
@@ -111,7 +108,7 @@ export async function deleteFolder(folderId: string) {
     return { error: "Impossible de supprimer le dossier." }
   }
 
-  // 2. LE FIX EST ICI : On force la mise à jour de la Sidebar (Layout)
+  // 2. On force la mise à jour de la Sidebar (Layout)
   revalidatePath('/', 'layout')
 
   // 3. Redirection vers l'accueil
@@ -185,7 +182,7 @@ export async function createPage(formData: FormData) {
   
   if (!url || !folderId) return { error: "URL requise" }
 
-  // 1. Insérer la page et RÉCUPÉRER son ID (.select().single())
+  // 1. Insérer la page
   const { data: newPage, error } = await supabase
     .from('pages')
     .insert({
@@ -193,7 +190,7 @@ export async function createPage(formData: FormData) {
       name: name || "Page sans nom",
       folder_id: folderId
     })
-    .select() // Important : on veut récupérer l'objet créé
+    .select()
     .single()
 
   if (error || !newPage) {
@@ -201,8 +198,7 @@ export async function createPage(formData: FormData) {
     return { error: "Erreur lors de l'ajout de la page" }
   }
 
-  // 2. Récupérer la Clé API (nécessaire pour l'audit)
-  // On refait une petite requête pour chercher la clé liée au dossier
+  // 2. Récupérer la Clé API
   const { data: folder } = await supabase
     .from('folders')
     .select('organization_id, organizations(google_api_key)')
@@ -212,10 +208,8 @@ export async function createPage(formData: FormData) {
   // @ts-ignore
   const apiKey = folder?.organizations?.google_api_key || folder?.organizations?.[0]?.google_api_key
 
-  // 3. Lancer l'audit immédiatement (si on a une clé)
+  // 3. Lancer l'audit immédiatement
   if (apiKey) {
-    // On attend la fin de l'audit avant de renvoyer la réponse au client
-    // Cela permet d'afficher les scores dès que la page se rafraîchit
     await _performAudit(url, folderId, apiKey, newPage.id)
   }
 
@@ -239,7 +233,7 @@ export async function deletePage(pageId: string, folderId: string) {
 
 // --- 4. MOTEUR D'AUDIT (GLOBAL & UNITAIRE) ---
 
-// Fonction utilitaire pour récupérer la date d'expiration SSL
+// Fonction utilitaire pour récupérer la date d'expiration SSL via Node.js
 function getSSLExpiry(targetUrl: string): Promise<string | null> {
   return new Promise((resolve) => {
     try {
@@ -263,7 +257,7 @@ function getSSLExpiry(targetUrl: string): Promise<string | null> {
       })
 
       req.on('error', (e) => {
-        console.error("Erreur SSL Check:", e)
+        // Erreur silencieuse pour SSL, on renvoie null
         resolve(null)
       })
 
@@ -276,14 +270,30 @@ function getSSLExpiry(targetUrl: string): Promise<string | null> {
 
 /**
  * Fonction interne privée qui exécute la logique technique d'un audit.
+ * INCLUT LE CORRECTIF 404/500
  */
 async function _performAudit(url: string, folderId: string, apiKey: string, pageId: string | null = null) {
   const supabase = await createClient()
+  
+  // --- A. VERIFICATION DU VRAI CODE HTTP (FIX) ---
+  // On le fait avant Google pour détecter les 404/500 même si Google répond 200
+  let realStatusCode = 0
+  try {
+    const checkRes = await fetch(url, { 
+        method: 'GET',
+        cache: 'no-store', // Important: ne pas mettre en cache
+        redirect: 'follow' // Suivre les redirections pour avoir le code final
+    })
+    realStatusCode = checkRes.status
+  } catch (err) {
+    console.error("Erreur Fetch préliminaire:", err)
+    realStatusCode = 0 // Site inaccessible (DNS, Timeout...)
+  }
+
   const baseUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${apiKey}&category=performance&category=accessibility&category=best-practices&category=seo`
   
   try {
     // 1. Parallélisation : Mobile + Desktop + Date SSL
-    // On utilise { cache: 'no-store' } pour éviter l'erreur "Single item size exceeds maxSize" de Next.js
     const [mobileRes, desktopRes, sslDate] = await Promise.all([
       fetch(`${baseUrl}&strategy=mobile`, { cache: 'no-store' }),
       fetch(`${baseUrl}&strategy=desktop`, { cache: 'no-store' }),
@@ -293,25 +303,20 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
     const mobileData = await mobileRes.json()
     const desktopData = await desktopRes.json()
 
-    // --- 2. GESTION DES ERREURS GLOBALES API (DNS, Timeout, 500 Google) ---
+    // --- 2. GESTION DES ERREURS GOOGLE ---
     if (mobileData.error || desktopData.error) {
         const errorMsg = (mobileData.error?.message || desktopData.error?.message || "Erreur inconnue").toLowerCase()
         console.error(`Erreur Google sur ${url}:`, errorMsg)
 
-        let errorCode = 500 // Par défaut erreur serveur
-        
-        // On tente de deviner le code HTTP via le message d'erreur de Google
-        if (errorMsg.includes("404") || errorMsg.includes("not found")) errorCode = 404
-        else if (errorMsg.includes("403") || errorMsg.includes("forbidden")) errorCode = 403
-        else if (errorMsg.includes("500")) errorCode = 500
-        else if (errorMsg.includes("dns") || errorMsg.includes("resolve")) errorCode = 0 
+        // Si on a capturé un code réel au début, on l'utilise, sinon on devine ou met 500
+        const finalCode = realStatusCode !== 0 ? realStatusCode : 500
 
         // Sauvegarde de l'audit en échec
         await supabase.from('audits').insert({
             folder_id: folderId,
             page_id: pageId,
             url: url,
-            status_code: errorCode,
+            status_code: finalCode, // On utilise le vrai code
             https_valid: false,
             ssl_expiry_date: null,
             indexable: false,
@@ -325,31 +330,15 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
             report_json: mobileData // On garde l'erreur pour debug
         })
 
-        return { success: true } 
+        return { success: true, statusCode: finalCode } 
     }
 
-    // --- 3. EXTRACTION DU VRAI CODE HTTP (Lighthouse Analysis) ---
+    // --- 3. EXTRACTION DES DONNÉES ---
     const mAudits = mobileData.lighthouseResult.audits
-    
-    // L'audit 'http-status-code' contient le code réel si != 200
-    const httpStatusAudit = mAudits['http-status-code']
-    let statusCode = 200 // Optimiste par défaut
-
-    if (httpStatusAudit && httpStatusAudit.score === 0) {
-       // Ex: "Unsuccessful HTTP status code (404)" -> On extrait "404"
-       const match = httpStatusAudit.displayValue?.match(/\b\d{3}\b/)
-       if (match) {
-         statusCode = parseInt(match[0], 10)
-       } else {
-         statusCode = 404
-       }
-    }
-
-    // --- 4. EXTRACTION DES SCORES ---
     const mCats = mobileData.lighthouseResult.categories
     const dCats = desktopData.lighthouseResult.categories
 
-    // Utilisation de ?.score pour éviter les crashs si une catégorie manque
+    // Scores
     const perfMobile = Math.round(mCats['performance']?.score * 100 || 0)
     const perfDesktop = Math.round(dCats['performance']?.score * 100 || 0)
     const accessScore = Math.round(mCats['accessibility']?.score * 100 || 0)
@@ -358,18 +347,19 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
     
     const ttfb = Math.round(mAudits['server-response-time']?.numericValue || 0)
     const screenshot = mAudits['final-screenshot']?.details?.data
-    const isHttps = mAudits['is-on-https']?.score === 1
+    const isHttps = url.startsWith('https://') // Simple check
     const isCrawlable = mAudits['is-crawlable']?.score === 1
 
-    // --- 5. INSERTION EN BASE ---
+    // --- 4. INSERTION EN BASE ---
+    // C'est ici qu'on utilise 'realStatusCode' qu'on a capturé nous-mêmes
     await supabase.from('audits').insert({
         folder_id: folderId,
         page_id: pageId,
         url: url,
-        status_code: statusCode, // 200, 404, 500...
+        status_code: realStatusCode, // <-- LE FIX EST ICI
         https_valid: isHttps,
-        ssl_expiry_date: sslDate, // La date récupérée via Node.js
-        indexable: isCrawlable,
+        ssl_expiry_date: sslDate,
+        indexable: isCrawlable && realStatusCode === 200,
         screenshot: screenshot,
         performance_score: perfMobile,
         performance_desktop_score: perfDesktop,
@@ -377,10 +367,10 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
         best_practices_score: bestPracticesScore,
         seo_score: seoScore,
         ttfb: ttfb,
-        report_json: mobileData // Le gros JSON pour le Side Panel
+        report_json: mobileData
     })
 
-    return { success: true }
+    return { success: true, statusCode: realStatusCode }
 
   } catch (err) {
     console.error(`Crash audit ${url}:`, err)
@@ -405,15 +395,19 @@ export async function runPageSpeedAudit(url: string, folderId: string, pageId?: 
 
   const result = await _performAudit(url, folderId, apiKey, pageId || null)
   
+  // Si c'est la racine (pas de pageId), on met à jour le statut global du dossier
   if (!pageId && result.success) {
-    await supabase.from('folders').update({ status: 'up' }).eq('id', folderId)
+      // Si code >= 400, on met 'issues', sinon 'active'
+      const newStatus = (result.statusCode && result.statusCode >= 400) ? 'issues' : 'active'
+      await supabase.from('folders').update({ status: newStatus }).eq('id', folderId)
   }
 
   revalidatePath(`/site/${folderId}`)
+  revalidatePath('/')
   return result
 }
 
-// Action 2 : Audit GLOBAL (Nouveau Bouton Flottant)
+// Action 2 : Audit GLOBAL (Bouton Flottant)
 export async function runGlobalAudit(folderId: string) {
   const supabase = await createClient()
 
@@ -436,36 +430,41 @@ export async function runGlobalAudit(folderId: string) {
 
   const tasks = []
 
-  // 2. Ajouter la racine (Root URL) à la liste des tâches
+  // 2. Ajouter la racine (Root URL)
   tasks.push(_performAudit(folder.root_url, folder.id, apiKey, null))
 
-  // 3. Ajouter toutes les sous-pages à la liste des tâches
+  // 3. Ajouter toutes les sous-pages
   if (folder.pages && folder.pages.length > 0) {
     folder.pages.forEach((p: any) => {
         tasks.push(_performAudit(p.url, folder.id, apiKey, p.id))
     })
   }
 
-  // 4. Exécution Parallèle (Attention, Google limite le débit, ok pour < 10 pages)
+  // 4. Exécution
   try {
-    await Promise.all(tasks)
+    const results = await Promise.all(tasks)
     
-    // Si au moins la racine est passée, on considère le site UP
-    await supabase.from('folders').update({ status: 'up' }).eq('id', folderId)
+    // Logique optionnelle : Si la racine a un code erreur, on passe le site en 'issues'
+    const rootResult = results[0] // Le premier est toujours la racine
+    if (rootResult && rootResult.statusCode && rootResult.statusCode >= 400) {
+        await supabase.from('folders').update({ status: 'issues' }).eq('id', folderId)
+    } else {
+        await supabase.from('folders').update({ status: 'active' }).eq('id', folderId)
+    }
     
     revalidatePath(`/site/${folderId}`)
+    revalidatePath('/')
     return { success: `Analyse terminée sur ${tasks.length} URL(s).` }
   } catch (e) {
     return { error: "Erreur lors de l'analyse globale." }
   }
 }
 
-// ---RÉCUPÉRATION DU DÉTAIL AUDIT (LAZY LOAD) ---
+// --- 7. RÉCUPÉRATION DU DÉTAIL AUDIT (LAZY LOAD) ---
 
 export async function getAuditDetails(auditId: string) {
   const supabase = await createClient()
   
-  // On ne récupère QUE la colonne report_json pour cet ID précis
   const { data, error } = await supabase
     .from('audits')
     .select('report_json')
@@ -476,4 +475,3 @@ export async function getAuditDetails(auditId: string) {
   
   return { report: data.report_json }
 }
-
