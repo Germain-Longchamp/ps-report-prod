@@ -65,9 +65,21 @@ export function DashboardSidebar({ userEmail, folders, incidentCount }: Dashboar
   return (
     <aside className="w-64 bg-[#0A0A0A] text-white hidden md:flex flex-col fixed inset-y-0 z-50 border-r border-white/10">
         
-        {/* LOGO */}
+        {/* LOGO PS REPORT */}
         <div className="h-16 flex items-center px-6 border-b border-white/10">
-          <span className="font-bold text-xl tracking-tight text-white">PS Report</span>
+          <Link href="/" className="flex items-center gap-3 group">
+            
+            {/* Le Logo (Cube bleu dégradé) */}
+            <div className="p-1.5 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-lg shadow-sm shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-all duration-300">
+               <LayoutDashboard className="h-5 w-5" />
+            </div>
+
+            {/* Le Texte (Avec le léger dégradé Premium) */}
+            <span className="font-bold text-xl tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-zinc-400">
+              PS Report
+            </span>
+            
+          </Link>
         </div>
 
         <nav className="flex-1 overflow-y-auto p-4 space-y-8">
