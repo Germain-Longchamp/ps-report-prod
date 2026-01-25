@@ -1,9 +1,10 @@
 import Link from "next/link"
-import { login } from "./actions"
+import { login, signup } from "./actions" // On importe signup ici
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { LayoutDashboard } from "lucide-react"
+import { LayoutDashboard, ArrowRight, UserPlus, LogIn } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs" // Import des onglets
 
 // --- NOUVEAU COMPOSANT SVG TECH ANIMÉ ---
 const TechBackgroundSVG = () => (
@@ -108,25 +109,21 @@ const TechBackgroundSVG = () => (
 )
 
 
-export default function LoginPage({
+export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: { error?: string }
+  searchParams: Promise<{ error?: string }>
 }) {
+  const params = await searchParams // Next.js 15 fix
+
   return (
     <div className="w-full h-screen lg:grid lg:grid-cols-2 overflow-hidden">
       
-      {/* --- COLONNE GAUCHE (BRANDING + SVG TECH ANIMÉ) --- */}
+      {/* COLONNE GAUCHE (BRANDING + SVG) */}
       <div className="hidden relative bg-zinc-950 lg:flex flex-col justify-between p-10 text-white overflow-hidden z-0">
-        
-        {/* 1. LE NOUVEAU FOND SVG ANIMÉ */}
         <TechBackgroundSVG />
-        
-        {/* Dégradé d'ambiance */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-transparent via-zinc-950/50 to-zinc-950 z-0 pointer-events-none"></div>
 
-
-        {/* 2. CONTENU AU PREMIER PLAN */}
         <div className="flex items-center gap-3 text-lg font-bold tracking-tight z-10">
           <div className="p-1.5 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-lg shadow-sm shadow-blue-500/20">
              <LayoutDashboard className="h-5 w-5" />
@@ -136,94 +133,163 @@ export default function LoginPage({
           </span>
         </div>
         
-        <div className="z-10 flex-1 flex items-center justify-center">
-            {/* Espace vide pour laisser vivre l'animation */}
-        </div>
+        <div className="z-10 flex-1 flex items-center justify-center"></div>
 
         <div className="text-sm text-zinc-500 z-10 font-medium">
            © 2024 PS Report Inc. <span className="opacity-50">|</span> Monitoring Infrastructure.
         </div>
       </div>
 
-      {/* --- COLONNE DROITE (FORMULAIRE - INCHANGÉ) --- */}
+      {/* COLONNE DROITE (FORMULAIRE) */}
       <div className="flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-white relative z-10">
-        <div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[380px]">
+        <div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[400px]">
           
-          <div className="flex flex-col space-y-2 text-center">
+          <div className="flex flex-col space-y-2 text-center mb-2">
             <h1 className="text-4xl font-extrabold tracking-tight">
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 leading-tight">
-                Connexion
+                Bienvenue
               </span>
             </h1>
             <p className="text-base text-gray-500 mt-2">
-              Accédez à votre tableau de bord de monitoring.
+              Accédez à votre tableau de bord.
             </p>
           </div>
 
-          <div className="grid gap-6">
-            <form action={login}>
-              <div className="grid gap-5">
-                
-                <div className="grid gap-2">
-                  <Label htmlFor="email" className="text-gray-700 font-medium">Email</Label>
-                  <Input
-                    id="email"
-                    name="email"
-                    placeholder="nom@exemple.com"
-                    type="email"
-                    autoCapitalize="none"
-                    autoComplete="email"
-                    autoCorrect="off"
-                    required
-                    className="bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 transition-all h-11"
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <div className="flex items-center justify-between">
-                     <Label htmlFor="password" className="text-gray-700 font-medium">Mot de passe</Label>
-                  </div>
-                  <Input
-                    id="password"
-                    name="password"
-                    type="password"
-                    required
-                    className="bg-gray-50 border-gray-200 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 transition-all h-11"
-                  />
-                </div>
-                
-                {searchParams?.error === 'true' && (
-                    <div className="p-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg text-center animate-in fade-in slide-in-from-top-2 font-medium">
-                        Identifiants incorrects.
-                    </div>
-                )}
-
-                <Button type="submit" className="h-11 bg-[#0A0A0A] hover:bg-zinc-800 text-white w-full shadow-md transition-all hover:shadow-blue-900/20 text-base font-semibold mt-2">
-                  Se connecter
-                </Button>
-
-              </div>
-            </form>
-
-            <div className="relative my-2">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-gray-100" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-4 text-gray-400 font-medium tracking-wider">
-                  Ou continuer avec
-                </span>
-              </div>
-            </div>
+          {/* --- NOUVEAUX TABS PLUS JOLIS --- */}
+          <Tabs defaultValue="login" className="w-full">
             
-            <div className="text-center text-sm text-gray-500">
-                Pas encore de compte ?{" "}
-                <Link href="/signup" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors hover:underline underline-offset-4">
-                    Créer un compte gratuitement
-                </Link>
-            </div>
+            {/* 1. La liste des onglets style "Pilule" */}
+            <TabsList className="grid w-full grid-cols-2 mb-8 p-1 bg-zinc-100/80 border border-zinc-200/50 rounded-full h-12">
+                <TabsTrigger 
+                    value="login" 
+                    className="rounded-full text-zinc-500 data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm data-[state=active]:font-semibold transition-all duration-300 h-full"
+                >
+                    Connexion
+                </TabsTrigger>
+                <TabsTrigger 
+                    value="signup" 
+                    className="rounded-full text-zinc-500 data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm data-[state=active]:font-semibold transition-all duration-300 h-full"
+                >
+                    Inscription
+                </TabsTrigger>
+            </TabsList>
 
+            {/* --- CONTENU CONNEXION --- */}
+            <TabsContent value="login" className="space-y-4 animate-in fade-in-50 slide-in-from-left-2 duration-300">
+                <form action={login}>
+                <div className="grid gap-5">
+                    <div className="grid gap-2">
+                        <Label htmlFor="email-login" className="text-zinc-700">Email</Label>
+                        <Input
+                            id="email-login"
+                            name="email"
+                            type="email"
+                            placeholder="nom@exemple.com"
+                            required
+                            className="bg-gray-50 border-gray-200 h-11 focus:bg-white focus:ring-2 focus:ring-blue-500/10 transition-all"
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="password-login" className="text-zinc-700">Mot de passe</Label>
+                        <Input
+                            id="password-login"
+                            name="password"
+                            type="password"
+                            required
+                            className="bg-gray-50 border-gray-200 h-11 focus:bg-white focus:ring-2 focus:ring-blue-500/10 transition-all"
+                        />
+                    </div>
+                    <Button type="submit" className="h-11 bg-[#0A0A0A] hover:bg-zinc-800 text-white w-full shadow-lg shadow-zinc-900/10 hover:shadow-zinc-900/20 mt-2 font-medium flex items-center justify-center gap-2 transition-all">
+                        <LogIn className="w-4 h-4" /> Se connecter
+                    </Button>
+                </div>
+                </form>
+            </TabsContent>
+
+            {/* --- CONTENU INSCRIPTION --- */}
+            <TabsContent value="signup" className="space-y-4 animate-in fade-in-50 slide-in-from-right-2 duration-300">
+                <form action={signup}>
+                <div className="grid gap-5">
+                    
+                    {/* NOUVEAUX CHAMPS : PRÉNOM & NOM */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="firstName" className="text-zinc-700">Prénom</Label>
+                            <Input
+                                id="firstName"
+                                name="firstName"
+                                placeholder="Jean"
+                                required
+                                className="bg-gray-50 border-gray-200 h-11 focus:bg-white focus:ring-2 focus:ring-blue-500/10 transition-all"
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="lastName" className="text-zinc-700">Nom</Label>
+                            <Input
+                                id="lastName"
+                                name="lastName"
+                                placeholder="Dupont"
+                                required
+                                className="bg-gray-50 border-gray-200 h-11 focus:bg-white focus:ring-2 focus:ring-blue-500/10 transition-all"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid gap-2">
+                        <Label htmlFor="email-signup" className="text-zinc-700">Email professionnel</Label>
+                        <Input
+                            id="email-signup"
+                            name="email"
+                            type="email"
+                            placeholder="nom@exemple.com"
+                            required
+                            className="bg-gray-50 border-gray-200 h-11 focus:bg-white focus:ring-2 focus:ring-blue-500/10 transition-all"
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="password-signup" className="text-zinc-700">Mot de passe</Label>
+                        <Input
+                            id="password-signup"
+                            name="password"
+                            type="password"
+                            required
+                            minLength={6}
+                            className="bg-gray-50 border-gray-200 h-11 focus:bg-white focus:ring-2 focus:ring-blue-500/10 transition-all"
+                        />
+                        <p className="text-[11px] text-zinc-400 font-medium">6 caractères minimum requis.</p>
+                    </div>
+                    <Button type="submit" className="h-11 bg-blue-600 hover:bg-blue-700 text-white w-full shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 mt-2 font-medium flex items-center justify-center gap-2 transition-all">
+                        <UserPlus className="w-4 h-4" /> Créer mon compte
+                    </Button>
+                </div>
+                </form>
+            </TabsContent>
+          </Tabs>
+
+          {/* GESTION ERREURS VISUELLE */}
+          {params?.error && (
+             <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center justify-center gap-2 animate-in fade-in slide-in-from-top-2">
+                <span className="font-bold">Erreur :</span> Identifiants incorrects ou compte existant.
+             </div>
+          )}
+
+          {/* FOOTER LIENS */}
+          <div className="text-center space-y-4">
+             <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-gray-100" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-4 text-gray-400 font-medium tracking-wider">
+                    Sécurité
+                    </span>
+                </div>
+            </div>
+            <p className="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed">
+                Vos données sont chiffrées de bout en bout. En continuant, vous acceptez nos conditions d'utilisation.
+            </p>
           </div>
+
         </div>
       </div>
     </div>
