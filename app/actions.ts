@@ -477,3 +477,88 @@ export async function getAuditDetails(auditId: string) {
   if (error || !data) return { error: "Rapport introuvable" }
   return { report: data.report_json }
 }
+
+
+// --- 5. GESTION DES MEMBRES ---
+
+
+export async function inviteMember(formData: FormData) {
+  const supabase = await createClient()
+  
+  // 1. Auth Check basique
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
+
+  const email = formData.get('email') as string
+  if (!email) return { error: "Email requis" }
+
+  // 2. Récupérer l'org active (via cookie)
+  const cookieStore = await cookies()
+  const activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+  
+  if (!activeOrgId) return { error: "Aucune organisation active." }
+
+  // 3. APPEL DE LA FONCTION SQL (Tout se fait là-dedans)
+  const { data: result, error } = await supabase.rpc('add_member_by_email', {
+    target_email: email,
+    target_org_id: activeOrgId
+  })
+
+  if (error) {
+    console.error("Erreur RPC:", error)
+    return { error: "Erreur technique lors de l'ajout." }
+  }
+
+  // 4. Gestion des retours de la fonction SQL
+  switch (result) {
+    case 'success':
+      revalidatePath('/settings')
+      return { success: "Utilisateur ajouté à l'équipe !" }
+    
+    case 'user_not_found':
+      return { error: "Aucun utilisateur trouvé avec cet email." }
+    
+    case 'already_member':
+      return { error: "Cet utilisateur fait déjà partie de l'équipe." }
+    
+    case 'not_authorized':
+      return { error: "Vous devez être Admin (Owner) pour ajouter des membres." }
+      
+    default:
+      return { error: "Erreur inconnue." }
+  }
+}
+
+export async function removeMember(formData: FormData) {
+  const supabase = await createClient()
+  
+  // 1. Auth Check
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
+
+  const targetUserId = formData.get('userId') as string
+  
+  // 2. Org Check
+  const cookieStore = await cookies()
+  const activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+  if (!activeOrgId) return { error: "Aucune organisation active" }
+
+  // 3. Appel SQL (RPC)
+  const { data: result, error } = await supabase.rpc('remove_org_member', {
+    target_user_id: targetUserId,
+    target_org_id: activeOrgId
+  })
+
+  if (error) {
+    console.error("Erreur Remove:", error)
+    return { error: "Erreur technique." }
+  }
+
+  if (result === 'not_authorized') {
+    return { error: "Vous n'avez pas les droits pour faire ça." }
+  }
+
+  // 4. Important : Rafraîchir les données
+  revalidatePath('/settings')
+  return { success: "Membre retiré." }
+}
