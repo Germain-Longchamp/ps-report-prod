@@ -20,43 +20,55 @@ export default async function DashboardPage() {
   const hour = now.getHours()
   const greeting = hour >= 18 ? 'Bonsoir' : 'Bonjour'
 
-  // 2. Récupération des Données (Dont le PROFIL utilisateur)
-  const [foldersRes, pagesCountRes, pagesStatusRes, rootAuditsRes, profileRes] = await Promise.all([
-    supabase.from('folders').select('*').order('created_at', { ascending: false }),
-    supabase.from('pages').select('*', { count: 'exact', head: true }),
-    supabase.from('pages').select('id, audits(status_code, created_at)'),
-    supabase.from('audits')
-      .select('folder_id, status_code, created_at')
-      .is('page_id', null)
+  // 2. RÉCUPÉRATION DES DONNÉES (Folders + Pages + Audits associés)
+  const [foldersRes, pagesRes, profileRes] = await Promise.all([
+    // On récupère les dossiers et leurs audits pour vérifier la racine
+    supabase.from('folders')
+      .select('*, audits(id, status_code, created_at)')
       .order('created_at', { ascending: false }),
-    // Récupération du profil pour le prénom
+    
+    // On récupère les pages et leurs audits pour vérifier les sous-pages
+    supabase.from('pages')
+      .select('*, audits(id, status_code, created_at)'),
+
     supabase.from('profiles').select('first_name').eq('id', user.id).single()
   ])
 
-  // Gestion du Nom d'affichage
-  // Priorité : Prénom en base > Partie gauche de l'email > "Utilisateur"
+  const folders = foldersRes.data || []
+  const pages = pagesRes.data || []
+  
+  // Nom d'affichage
   const profile = profileRes.data
   const userName = profile?.first_name || user.email?.split('@')[0] || 'Utilisateur'
 
-  const folders = foldersRes.data || []
-  const totalPages = pagesCountRes.count || 0
+  // --- 3. CALCUL DES INCIDENTS (Racines + Sous-pages) ---
+  let totalIncidents = 0
 
-  // 3. Calcul des KPIs
-  let subPageErrorCount = 0
-  const pagesData = pagesStatusRes.data || []
-  pagesData.forEach((page: any) => {
-    if (page.audits?.length > 0) {
-        const last = page.audits.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
-        if (last.status_code >= 400) subPageErrorCount++
-    }
+  // Fonction helper pour vérifier si un tableau d'audits contient une erreur récente
+  const hasError = (audits: any[]) => {
+      if (!audits || audits.length === 0) return false
+      // Tri du plus récent au plus ancien
+      const last = audits.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+      // Erreur si status 0 (Crash/DNS) ou >= 400 (HTTP Error)
+      return last.status_code === 0 || last.status_code >= 400
+  }
+
+  // A. Vérification des Racines (Folders)
+  const folderStatusMap: Record<string, number> = {}
+  
+  folders.forEach(folder => {
+      // Calcul du statut pour l'affichage plus bas
+      const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+      if (lastAudit) {
+          folderStatusMap[folder.id] = lastAudit.status_code
+          if (hasError(folder.audits)) totalIncidents++
+      }
   })
 
-  // 4. Mappage des statuts racine
-  const folderStatusMap: Record<string, number> = {}
-  const rootAudits = rootAuditsRes.data || []
-  rootAudits.forEach((audit) => {
-      if (!folderStatusMap[audit.folder_id]) {
-          folderStatusMap[audit.folder_id] = audit.status_code
+  // B. Vérification des Sous-pages (Pages)
+  pages.forEach(page => {
+      if (hasError(page.audits)) {
+          totalIncidents++
       }
   })
 
@@ -78,12 +90,21 @@ export default async function DashboardPage() {
             </p>
         </div>
         
-        {/* Résumé rapide */}
-        <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-500 bg-gray-50 px-4 py-2 rounded-full border border-gray-100">
-            <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                Système opérationnel
-            </div>
+        {/* Résumé rapide (En haut à droite) */}
+        <div className={`hidden md:flex items-center gap-6 text-sm font-medium px-4 py-2 rounded-full border 
+            ${totalIncidents === 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}
+        `}>
+            {totalIncidents === 0 ? (
+                <div className="flex items-center gap-2">
+                    <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Systèmes opérationnels
+                </div>
+            ) : (
+                <div className="flex items-center gap-2">
+                    <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                    {totalIncidents} incident(s) détecté(s)
+                </div>
+            )}
         </div>
       </div>
 
@@ -109,28 +130,28 @@ export default async function DashboardPage() {
                 <div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><FileText className="h-4 w-4" /></div>
             </CardHeader>
             <CardContent>
-                <div className="text-3xl font-bold text-gray-900">{totalPages}</div>
+                <div className="text-3xl font-bold text-gray-900">{pages.length}</div>
                 <p className="text-xs text-gray-500 mt-1">URLs surveillées</p>
             </CardContent>
         </Card>
 
         {/* Carte 3 : Incidents (CLIQUABLE) */}
         <Link href="/alerts" className="block h-full">
-            <Card className={`h-full border shadow-sm transition-all cursor-pointer ${subPageErrorCount > 0 ? 'bg-red-50 border-red-100 hover:border-red-300' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}>
+            <Card className={`h-full border shadow-sm transition-all cursor-pointer ${totalIncidents > 0 ? 'bg-red-50 border-red-200 hover:border-red-400' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className={`text-sm font-medium uppercase tracking-wider ${subPageErrorCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                    <CardTitle className={`text-sm font-medium uppercase tracking-wider ${totalIncidents > 0 ? 'text-red-600' : 'text-gray-500'}`}>
                         Incidents
                     </CardTitle>
-                    <div className={`p-2 rounded-lg ${subPageErrorCount > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                        {subPageErrorCount > 0 ? <AlertOctagon className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                    <div className={`p-2 rounded-lg ${totalIncidents > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                        {totalIncidents > 0 ? <AlertOctagon className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className={`text-3xl font-bold ${subPageErrorCount > 0 ? 'text-red-700' : 'text-gray-900'}`}>
-                        {subPageErrorCount}
+                    <div className={`text-3xl font-bold ${totalIncidents > 0 ? 'text-red-700' : 'text-gray-900'}`}>
+                        {totalIncidents}
                     </div>
-                    <p className={`text-xs mt-1 ${subPageErrorCount > 0 ? 'text-red-600/80 font-medium' : 'text-gray-500'}`}>
-                        {subPageErrorCount > 0 ? "Erreurs détectées (Cliquez pour voir)" : "Tout est opérationnel"}
+                    <p className={`text-xs mt-1 ${totalIncidents > 0 ? 'text-red-600/80 font-medium' : 'text-gray-500'}`}>
+                        {totalIncidents > 0 ? "Erreurs critiques détectées" : "Tout est opérationnel"}
                     </p>
                 </CardContent>
             </Card>
@@ -149,8 +170,10 @@ export default async function DashboardPage() {
           {folders.length > 0 ? (
              folders.map((folder) => {
                 const status = folderStatusMap[folder.id]
-                const isOnline = status === 200
                 const hasAudit = status !== undefined
+                
+                // Logique stricte : Vert uniquement si 200 <= status < 400
+                const isOnline = hasAudit && (status >= 200 && status < 400)
 
                 return (
                     <Link key={folder.id} href={`/site/${folder.id}`} className="group block h-full">
@@ -175,7 +198,7 @@ export default async function DashboardPage() {
                                             <Badge variant="outline" className={`text-[9px] h-4 px-1 font-mono
                                                 ${isOnline ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-red-700 bg-red-50 border-red-200'}
                                             `}>
-                                                {status}
+                                                {status === 0 ? 'ERR' : status}
                                             </Badge>
                                         )}
                                     </div>
