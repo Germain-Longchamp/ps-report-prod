@@ -3,32 +3,57 @@
 import { useState } from 'react'
 import { 
   Search, 
-  ArrowUpDown, 
   Smartphone, 
   Monitor, 
   Search as SearchIcon, 
-  CheckCircle2, 
   ExternalLink,
   Trash2,
-  MoreVertical
+  MoreVertical,
+  Play,       
+  FileText,   
+  Timer,
+  Loader2,
+  Accessibility,
+  CalendarDays,
+  AlertTriangle,
+  ArrowUpNarrowWide
 } from 'lucide-react'
-import { deletePage } from '@/app/actions'
+import { deletePage, runPageSpeedAudit, getAuditDetails } from '@/app/actions'
 import { toast } from "sonner"
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils' 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { AuditDetails } from '@/components/AuditDetails'
 
 // --- TYPES ---
-// (Optionnel mais recommandé pour la clarté)
 interface Audit {
   id: string
   created_at: string
   status_code: number
+  ttfb: number | null
   performance_score: number | null
   performance_desktop_score: number | null
   seo_score: number | null
@@ -44,7 +69,7 @@ interface Page {
   audits: Audit[]
 }
 
-// Helper pour les couleurs de score
+// --- HELPERS ---
 const getScoreColor = (score: number | null) => {
   if (score === null) return 'text-gray-400 bg-gray-50 border-gray-200'
   if (score >= 90) return 'text-emerald-600 bg-emerald-50 border-emerald-200'
@@ -52,27 +77,63 @@ const getScoreColor = (score: number | null) => {
   return 'text-red-600 bg-red-50 border-red-200'
 }
 
-// Helper sécurisé pour récupérer le dernier audit SANS muter les données
+const getTtfbColor = (ms: number | null) => {
+    if (!ms) return 'text-gray-400'
+    if (ms < 200) return 'text-emerald-600'
+    if (ms < 800) return 'text-orange-600'
+    return 'text-red-600'
+}
+
 const getLastAuditSafe = (audits: Audit[] | null) => {
   if (!audits || audits.length === 0) return null
-  // On utilise [...audits] pour créer une copie avant de trier
   return [...audits].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
 }
 
 export function PageList({ initialPages, folderId }: { initialPages: any[], folderId: string }) {
   const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState('date')
+  const [sortBy, setSortBy] = useState('date') // date, mobile, desktop, seo
+  const [runningAuditId, setRunningAuditId] = useState<string | null>(null)
+  
+  // UI States
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [selectedAuditReport, setSelectedAuditReport] = useState<any>(null)
+  const [isLoadingReport, setIsLoadingReport] = useState(false)
+  const [pageToDelete, setPageToDelete] = useState<string | null>(null)
 
-  const handleDelete = async (pageId: string) => {
-    // Note : confirm() est bloquant, une modale UI serait mieux à terme, mais OK pour le POC
-    if (!confirm("Voulez-vous vraiment supprimer cette page ?")) return
-    
-    const res = await deletePage(pageId, folderId)
+  // --- ACTIONS ---
+
+  const confirmDelete = async () => {
+    if (!pageToDelete) return
+    const res = await deletePage(pageToDelete, folderId)
+    setPageToDelete(null)
     if (res.error) toast.error(res.error)
-    else toast.success("Page supprimée")
+    else toast.success("Page supprimée avec succès")
   }
 
-  // --- LOGIQUE DE FILTRE & TRI ---
+  const handleRunAudit = async (url: string, pageId: string) => {
+    setRunningAuditId(pageId)
+    toast.info("Audit lancé, veuillez patienter...")
+    const res = await runPageSpeedAudit(url, folderId, pageId)
+    setRunningAuditId(null)
+    if (res.error) toast.error(res.error)
+    else toast.success("Audit terminé avec succès !")
+  }
+
+  const handleViewReport = async (auditId: string) => {
+      setIsSheetOpen(true)
+      setIsLoadingReport(true)
+      setSelectedAuditReport(null) 
+      const res = await getAuditDetails(auditId)
+      setIsLoadingReport(false)
+      if (res.error || !res.report) {
+          toast.error("Impossible de charger le rapport détaillé.")
+          setIsSheetOpen(false)
+      } else {
+          setSelectedAuditReport(res.report)
+      }
+  }
+
+  // --- FILTRAGE ET TRI ---
   const filteredPages = initialPages
     .filter((page: Page) => 
         page.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -81,159 +142,266 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
     .sort((a: Page, b: Page) => {
       const auditA = getLastAuditSafe(a.audits)
       const auditB = getLastAuditSafe(b.audits)
-
-      // Si pas d'audit, on met à la fin
+      
       if (!auditA && !auditB) return 0
       if (!auditA) return 1
       if (!auditB) return -1
 
       switch (sortBy) {
-        case 'mobile':
-          return (auditA.performance_score || 0) - (auditB.performance_score || 0)
-        case 'desktop':
-          return (auditA.performance_desktop_score || 0) - (auditB.performance_desktop_score || 0)
+        case 'mobile': 
+            // Croissant (identifier les pires scores)
+            return (auditA.performance_score || 0) - (auditB.performance_score || 0)
+        case 'desktop': 
+            return (auditA.performance_desktop_score || 0) - (auditB.performance_desktop_score || 0)
         case 'seo':
-          return (auditA.seo_score || 0) - (auditB.seo_score || 0)
-        case 'best-practices':
-          return (auditA.best_practices_score || 0) - (auditB.best_practices_score || 0)
-        case 'accessibility':
-          return (auditA.accessibility_score || 0) - (auditB.accessibility_score || 0)
-        default:
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            return (auditA.seo_score || 0) - (auditB.seo_score || 0)
+        default: 
+            // Date décroissante (plus récent d'abord)
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       }
     })
 
   return (
+    <>
     <div className="space-y-6">
       
-      {/* BARRE D'OUTILS */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-        <div className="relative flex-1 max-w-md">
+      {/* BARRE D'OUTILS ET DE TRI (Améliorée avec couleurs) */}
+      <div className="flex flex-col xl:flex-row gap-4 justify-between bg-white p-4 rounded-xl border border-gray-200 shadow-sm xl:items-center">
+        
+        {/* Recherche */}
+        <div className="relative w-full xl:max-w-xs">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
             <input 
                 type="text" 
-                placeholder="Rechercher une page..." 
+                placeholder="Filtrer par nom ou url..." 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-black transition-all"
             />
         </div>
 
-        <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500 hidden sm:block">Trier par :</span>
-            <div className="relative">
-                <select 
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="h-9 pl-3 pr-8 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/5 cursor-pointer appearance-none font-medium text-gray-700"
+        {/* TRI VISUEL COLORÉ */}
+        <div className="flex items-center gap-3 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0 no-scrollbar">
+            <span className="text-sm text-gray-500 whitespace-nowrap hidden xl:block font-medium">Trier par :</span>
+            
+            <div className="flex gap-2">
+                <button
+                    onClick={() => setSortBy('date')}
+                    className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border",
+                        sortBy === 'date' 
+                            ? "bg-black text-white border-black shadow-sm" 
+                            : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                    )}
                 >
-                    <option value="date">Plus récents</option>
-                    <option value="mobile">Score Mobile (Croissant)</option>
-                    <option value="desktop">Score Desktop (Croissant)</option>
-                    <option value="seo">Score SEO (Croissant)</option>
-                    <option value="best-practices">Bonnes Pratiques (Croissant)</option>
-                    <option value="accessibility">Accessibilité (Croissant)</option>
-                </select>
-                <ArrowUpDown className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    Récents
+                </button>
+
+                <button
+                    onClick={() => setSortBy('mobile')}
+                    className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border",
+                        sortBy === 'mobile' 
+                            ? "bg-blue-600 text-white border-blue-600 shadow-sm" 
+                            : "bg-white text-gray-600 border-gray-200 hover:border-blue-200 hover:text-blue-600"
+                    )}
+                >
+                    <Smartphone className="h-3.5 w-3.5" />
+                    Mobile
+                    {sortBy === 'mobile' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
+                </button>
+
+                <button
+                    onClick={() => setSortBy('desktop')}
+                    className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border",
+                        sortBy === 'desktop' 
+                            ? "bg-slate-700 text-white border-slate-700 shadow-sm" 
+                            : "bg-white text-gray-600 border-gray-200 hover:border-slate-300 hover:text-slate-800"
+                    )}
+                >
+                    <Monitor className="h-3.5 w-3.5" />
+                    Desktop
+                    {sortBy === 'desktop' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
+                </button>
+
+                <button
+                    onClick={() => setSortBy('seo')}
+                    className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border",
+                        sortBy === 'seo' 
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" 
+                            : "bg-white text-gray-600 border-gray-200 hover:border-emerald-200 hover:text-emerald-600"
+                    )}
+                >
+                    <SearchIcon className="h-3.5 w-3.5" />
+                    SEO
+                    {sortBy === 'seo' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
+                </button>
             </div>
         </div>
       </div>
 
       {/* LISTE DES RÉSULTATS */}
       <div className="space-y-3">
-        {filteredPages.length > 0 ? (
-            filteredPages.map((page: Page) => {
-                // CORRECTION ICI : Utilisation du helper sécurisé
-                const lastAudit = getLastAuditSafe(page.audits)
-                
-                const hasAudit = !!lastAudit
-                const isError = hasAudit && lastAudit!.status_code >= 400
+        {filteredPages.map((page: Page) => {
+            const lastAudit = getLastAuditSafe(page.audits)
+            const hasAudit = !!lastAudit
+            const isError = hasAudit && lastAudit!.status_code >= 400
+            const isRunning = runningAuditId === page.id
 
-                return (
-                    <div key={page.id} className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all p-4 flex flex-col md:flex-row md:items-center gap-6">
-                        
-                        {/* Infos Page */}
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                                <h3 className="font-bold text-gray-900 truncate">{page.name}</h3>
-                                {isError && <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">Erreur {lastAudit!.status_code}</Badge>}
-                            </div>
-                            <a href={page.url} target="_blank" className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 truncate transition-colors">
-                                {page.url} <ExternalLink className="h-3 w-3" />
-                            </a>
+            return (
+                <div key={page.id} className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all p-4 flex flex-col md:flex-row md:items-center gap-6">
+                    
+                    {/* Infos Page */}
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-bold text-gray-900 truncate">{page.name}</h3>
+                            {isError && <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">Erreur {lastAudit!.status_code}</Badge>}
                         </div>
+                        <a href={page.url} target="_blank" className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 truncate transition-colors">
+                            {page.url} <ExternalLink className="h-3 w-3" />
+                        </a>
+                    </div>
 
-                        {/* Scores */}
-                        {hasAudit && !isError ? (
-                            <div className="flex items-center gap-2 md:gap-6 shrink-0 overflow-x-auto pb-2 md:pb-0">
-                                
-                                <div className="flex flex-col items-center min-w-[60px]">
-                                    <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
-                                        <Smartphone className="h-3 w-3" /> Mobile
-                                    </span>
-                                    <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_score)}`}>
-                                        {lastAudit!.performance_score ?? '-'}
-                                    </div>
-                                </div>
+                    {/* Scores & KPIs */}
+                    {hasAudit && !isError ? (
+                        <div className="flex items-center gap-2 md:gap-6 shrink-0 overflow-x-auto pb-2 md:pb-0">
+                            
+                            {/* 1. Desktop */}
+                            <div className="flex flex-col items-center min-w-[60px]">
+                                <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Monitor className="h-3 w-3" /> Desk</span>
+                                <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_desktop_score)}`}>{lastAudit!.performance_desktop_score ?? '-'}</div>
+                            </div>
+                            
+                            {/* 2. Mobile */}
+                            <div className="flex flex-col items-center min-w-[60px]">
+                                <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Smartphone className="h-3 w-3" /> Mob</span>
+                                <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_score)}`}>{lastAudit!.performance_score ?? '-'}</div>
+                            </div>
 
-                                <div className="flex flex-col items-center min-w-[60px]">
-                                    <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
-                                        <Monitor className="h-3 w-3" /> Desk
-                                    </span>
-                                    <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_desktop_score)}`}>
-                                        {lastAudit!.performance_desktop_score ?? '-'}
-                                    </div>
-                                </div>
+                            {/* 3. SEO */}
+                            <div className="flex flex-col items-center min-w-[60px]">
+                                <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><SearchIcon className="h-3 w-3" /> SEO</span>
+                                <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.seo_score)}`}>{lastAudit!.seo_score ?? '-'}</div>
+                            </div>
 
-                                <div className="flex flex-col items-center min-w-[60px]">
-                                    <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
-                                        <SearchIcon className="h-3 w-3" /> SEO
-                                    </span>
-                                    <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.seo_score)}`}>
-                                        {lastAudit!.seo_score ?? '-'}
-                                    </div>
-                                </div>
-                                
-                                <div className="hidden lg:flex flex-col items-center min-w-[60px]">
-                                    <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
-                                        <CheckCircle2 className="h-3 w-3" /> Best
-                                    </span>
-                                    <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.best_practices_score)}`}>
-                                        {lastAudit!.best_practices_score ?? '-'}
-                                    </div>
+                            {/* 4. Accessibilité */}
+                            <div className="flex flex-col items-center min-w-[60px]">
+                                <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Accessibility className="h-3 w-3" /> Access</span>
+                                <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.accessibility_score)}`}>{lastAudit!.accessibility_score ?? '-'}</div>
+                            </div>
+
+                            {/* 5. TTFB */}
+                            <div className="flex flex-col items-center min-w-[60px] border-l border-gray-100 pl-4 ml-2">
+                                <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
+                                    <Timer className="h-3 w-3" /> TTFB
+                                </span>
+                                <div className={`text-sm font-bold ${getTtfbColor(lastAudit!.ttfb)}`}>
+                                    {lastAudit!.ttfb ? `${lastAudit!.ttfb}ms` : '-'}
                                 </div>
                             </div>
-                        ) : (
-                            <div className="shrink-0 text-sm text-gray-400 italic px-4">
-                                {isError ? "Audit impossible" : "En attente d'analyse..."}
-                            </div>
+
+                        </div>
+                    ) : (
+                        <div className="shrink-0 text-sm text-gray-400 italic px-4">
+                            {isError ? "Audit impossible" : "En attente d'analyse..."}
+                        </div>
+                    )}
+
+                    {/* Actions Rapides */}
+                    <div className="shrink-0 flex items-center gap-2 pl-2 md:border-l md:border-gray-100 md:pl-4">
+                        
+                        <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-gray-400 hover:text-black hover:bg-gray-100"
+                            onClick={() => handleRunAudit(page.url, page.id)}
+                            disabled={isRunning}
+                            title="Lancer un nouvel audit"
+                        >
+                            {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                        </Button>
+
+                        {hasAudit && !isError && (
+                             <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-8 text-blue-600 border-blue-200 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-300"
+                                onClick={() => handleViewReport(lastAudit!.id)}
+                            >
+                                <FileText className="h-3.5 w-3.5 mr-2" />
+                                Rapport
+                            </Button>
                         )}
 
-                        {/* Actions */}
-                        <div className="shrink-0 flex items-center pl-4 border-l border-gray-100">
-                             <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-black">
-                                        <MoreVertical className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => handleDelete(page.id)} className="text-red-600 focus:text-red-600 cursor-pointer">
-                                        <Trash2 className="h-4 w-4 mr-2" /> Supprimer la page
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                             </DropdownMenu>
-                        </div>
-
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-black">
+                                    <MoreVertical className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-white">
+                                <DropdownMenuItem onClick={() => setPageToDelete(page.id)} className="text-red-600 cursor-pointer focus:text-red-600">
+                                    <Trash2 className="h-4 w-4 mr-2" /> Supprimer
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
-                )
-            })
-        ) : (
-            <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
-                <p className="text-gray-500 text-sm">Aucune page ne correspond à votre recherche.</p>
-            </div>
-        )}
+
+                </div>
+            )
+        })}
       </div>
     </div>
+
+    {/* SIDE PANEL (DÉTAILS) */}
+    <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+        <SheetContent className="w-full sm:max-w-xl md:max-w-2xl overflow-y-auto p-0 bg-white">
+            <SheetHeader className="p-6 pb-2 border-b border-gray-100">
+                <SheetTitle>Rapport Détaillé</SheetTitle>
+                <SheetDescription>
+                    Analyse technique approfondie de la page.
+                </SheetDescription>
+            </SheetHeader>
+            <div className="h-full">
+                {isLoadingReport ? (
+                    <div className="flex flex-col items-center justify-center h-64 space-y-4">
+                        <Loader2 className="h-8 w-8 text-black animate-spin" />
+                        <p className="text-sm text-gray-500">Chargement du rapport complet...</p>
+                    </div>
+                ) : selectedAuditReport ? (
+                    <AuditDetails report={selectedAuditReport} />
+                ) : (
+                    <div className="p-8 text-center text-gray-500">
+                        Aucune donnée disponible.
+                    </div>
+                )}
+            </div>
+        </SheetContent>
+    </Sheet>
+
+    {/* ALERT DIALOG (SUPPRESSION) */}
+    <AlertDialog open={!!pageToDelete} onOpenChange={(open) => !open && setPageToDelete(null)}>
+        <AlertDialogContent className="bg-white">
+            <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+                    <AlertTriangle className="h-5 w-5" />
+                    Supprimer cette page ?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                    Cette action est irréversible. Toutes les données d&apos;historique et les rapports Lighthouse associés à cette URL seront définitivement effacés.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Annuler</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700 text-white border-0">
+                    Supprimer définitivement
+                </AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }
