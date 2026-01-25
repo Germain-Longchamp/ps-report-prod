@@ -2,32 +2,20 @@ import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { 
-  ArrowLeft, 
-  Plus, 
-  Globe, 
-  ShieldCheck, 
-  Activity, 
-  ImageIcon, 
   Settings, 
   ChevronRight, 
   ExternalLink,
-  Search as SearchIcon
+  ImageIcon,
+  ShieldCheck,
+  Activity,
+  Globe
 } from 'lucide-react'
+// On n'a plus besoin des imports Dialog, Input, Label ici
 import { PageList } from '@/components/PageList'
 import { RunAuditButton } from '@/components/RunAuditButton'
-import { createPage } from '@/app/actions'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent, // <--- C'est ici qu'on va agir
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Search as SearchIcon } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,6 +50,7 @@ export default async function Page({ params }: Props) {
 
   const pages = folder.pages || []
   
+  // KPI Logique (inchangée)
   const lastMainAudit = pages.length > 0 && pages[0].audits?.length > 0 
     ? [...pages[0].audits].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
     : null;
@@ -74,7 +63,7 @@ export default async function Page({ params }: Props) {
     <div className="relative min-h-screen bg-gray-50/30">
       <div className="p-10 w-full max-w-7xl mx-auto space-y-12 pb-32">
         
-        {/* HEADER */}
+        {/* HEADER (Inchangé) */}
         <header className="flex flex-col md:flex-row md:items-start justify-between gap-6">
             <div className="flex gap-6">
                 <div className="h-20 w-20 shrink-0 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden relative flex items-center justify-center p-1">
@@ -111,10 +100,11 @@ export default async function Page({ params }: Props) {
             </div>
         </header>
 
-        {/* KPI CARDS */}
+        {/* KPI CARDS (Inchangé) */}
         <section className="space-y-4">
           <h2 className="text-xl font-semibold text-gray-900">Santé du site</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Carte Status */}
               <Card className={`border-0 shadow-sm flex flex-col justify-between p-6 h-full relative overflow-hidden transition-all ${isUp ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
                   <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/10 blur-2xl pointer-events-none" />
                   <div className="flex items-start justify-between">
@@ -133,6 +123,7 @@ export default async function Page({ params }: Props) {
                   </div>
               </Card>
 
+              {/* Carte SSL */}
               <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full hover:border-gray-300 transition-colors bg-white">
                   <div className="flex items-center gap-3 mb-2">
                       <div className={`p-2 rounded-lg ${isSSLValid ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
@@ -144,6 +135,7 @@ export default async function Page({ params }: Props) {
                   <p className="text-xs text-muted-foreground mt-1">Certificat valide détecté</p>
               </Card>
 
+              {/* Carte Indexation */}
               <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full hover:border-gray-300 transition-colors bg-white">
                   <div className="flex items-center gap-3 mb-2">
                       <div className={`p-2 rounded-lg ${isIndexable ? 'bg-purple-50 text-purple-600' : 'bg-orange-50 text-orange-600'}`}>
@@ -157,42 +149,15 @@ export default async function Page({ params }: Props) {
           </div>
         </section>
 
-        {/* LISTE DES PAGES */}
+        {/* SECTION PAGES + FORMULAIRE RAPIDE INCLUS DANS PAGELIST */}
         <section className="space-y-6 pt-2">
-            <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-gray-200 pb-4 gap-4">
-              <div>
-                  <h2 className="text-xl font-bold text-gray-900">Pages internes</h2>
-                  <p className="text-sm text-gray-500 mt-1">Monitoring individuel des pages clés.</p>
-              </div>
-              <Dialog>
-                <DialogTrigger asChild>
-                    <Button className="bg-black text-white hover:bg-zinc-800 shadow-sm">
-                        <Plus className="h-4 w-4 mr-2" /> Suivre une nouvelle URL
-                    </Button>
-                </DialogTrigger>
-                {/* AJOUT DE 'bg-white' ICI */}
-                <DialogContent className="bg-white sm:rounded-xl">
-                    <DialogHeader>
-                        <DialogTitle>Ajouter une sous-page</DialogTitle>
-                        <DialogDescription>Entrez l'URL complète de la page à surveiller.</DialogDescription>
-                    </DialogHeader>
-                    <form action={createPage} className="space-y-4 py-4">
-                        <input type="hidden" name="folderId" value={folder.id} />
-                        <div className="space-y-2">
-                            <Label htmlFor="name">Nom (Optionnel)</Label>
-                            <Input id="name" name="name" placeholder="Ex: Page Tarifs" />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="url">URL Complète</Label>
-                            <Input id="url" name="url" placeholder={`Ex: ${folder.root_url}/pricing`} required type="url" />
-                        </div>
-                        <Button type="submit" className="w-full bg-black text-white">Ajouter et Analyser</Button>
-                    </form>
-                </DialogContent>
-            </Dialog>
+            <div>
+                 <h2 className="text-xl font-bold text-gray-900">Pages internes</h2>
+                 <p className="text-sm text-gray-500 mt-1">Monitoring individuel des pages clés.</p>
             </div>
 
-            <PageList initialPages={pages} folderId={folder.id} />
+            {/* Tout se passe désormais dans PageList */}
+            <PageList initialPages={pages} folderId={folder.id} rootUrl={folder.root_url} />
         </section>
 
       </div>

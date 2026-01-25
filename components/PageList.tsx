@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
   Search, 
   Smartphone, 
@@ -16,12 +17,15 @@ import {
   Accessibility,
   CalendarDays,
   AlertTriangle,
-  ArrowUpNarrowWide
+  ArrowUpNarrowWide,
+  Plus,
+  CornerDownRight
 } from 'lucide-react'
-import { deletePage, runPageSpeedAudit, getAuditDetails } from '@/app/actions'
+import { deletePage, runPageSpeedAudit, getAuditDetails, createPage } from '@/app/actions'
 import { toast } from "sonner"
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils' 
 import {
   DropdownMenu,
@@ -67,6 +71,7 @@ interface Page {
   url: string
   created_at: string
   audits: Audit[]
+  isOptimistic?: boolean 
 }
 
 // --- HELPERS ---
@@ -89,9 +94,16 @@ const getLastAuditSafe = (audits: Audit[] | null) => {
   return [...audits].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
 }
 
-export function PageList({ initialPages, folderId }: { initialPages: any[], folderId: string }) {
+export function PageList({ initialPages, folderId, rootUrl }: { initialPages: any[], folderId: string, rootUrl: string }) {
+  const router = useRouter()
+  const [pages, setPages] = useState<Page[]>(initialPages)
+  
+  useEffect(() => {
+    setPages(initialPages)
+  }, [initialPages])
+
   const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState('date') // date, mobile, desktop, seo
+  const [sortBy, setSortBy] = useState('date')
   const [runningAuditId, setRunningAuditId] = useState<string | null>(null)
   
   // UI States
@@ -100,23 +112,88 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
   const [isLoadingReport, setIsLoadingReport] = useState(false)
   const [pageToDelete, setPageToDelete] = useState<string | null>(null)
 
+  // --- INPUTS AJOUT RAPIDE ---
+  const [newUrl, setNewUrl] = useState('')
+  const [newName, setNewName] = useState('') 
+  const [isAddingPage, setIsAddingPage] = useState(false)
+
   // --- ACTIONS ---
+
+  const handleAddPage = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newUrl) return
+
+    // 1. Validation & Formatage URL
+    let finalUrl = newUrl.trim()
+    if (!finalUrl.startsWith('http')) {
+        if (finalUrl.startsWith('/')) {
+             finalUrl = rootUrl.replace(/\/$/, '') + finalUrl
+        } else {
+             finalUrl = `https://${finalUrl}`
+        }
+    }
+
+    const displayName = newName.trim() || finalUrl
+
+    setIsAddingPage(true)
+    const tempId = `temp-${Date.now()}`
+
+    // 2. OPTIMISTIC UI
+    const optimisticPage: Page = {
+        id: tempId,
+        name: displayName, 
+        url: finalUrl,
+        created_at: new Date().toISOString(),
+        audits: [],
+        isOptimistic: true 
+    }
+
+    setPages((prev) => [optimisticPage, ...prev])
+    
+    // Reset inputs
+    setNewUrl('') 
+    setNewName('')
+
+    try {
+        const formData = new FormData()
+        formData.append('url', finalUrl)
+        formData.append('folderId', folderId)
+        formData.append('name', displayName)
+
+        await createPage(formData)
+
+        router.refresh() 
+        toast.success("Page ajoutée et analysée !")
+    } catch (error) {
+        toast.error("Erreur lors de l'ajout")
+        setPages((prev) => prev.filter(p => p.id !== tempId))
+    } finally {
+        setIsAddingPage(false)
+    }
+  }
 
   const confirmDelete = async () => {
     if (!pageToDelete) return
     const res = await deletePage(pageToDelete, folderId)
     setPageToDelete(null)
     if (res.error) toast.error(res.error)
-    else toast.success("Page supprimée avec succès")
+    else {
+        toast.success("Page supprimée")
+        setPages(prev => prev.filter(p => p.id !== pageToDelete)) 
+        router.refresh()
+    }
   }
 
   const handleRunAudit = async (url: string, pageId: string) => {
     setRunningAuditId(pageId)
-    toast.info("Audit lancé, veuillez patienter...")
+    toast.info("Audit lancé...")
     const res = await runPageSpeedAudit(url, folderId, pageId)
     setRunningAuditId(null)
     if (res.error) toast.error(res.error)
-    else toast.success("Audit terminé avec succès !")
+    else {
+        toast.success("Audit terminé !")
+        router.refresh()
+    }
   }
 
   const handleViewReport = async (auditId: string) => {
@@ -134,12 +211,15 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
   }
 
   // --- FILTRAGE ET TRI ---
-  const filteredPages = initialPages
+  const filteredPages = pages
     .filter((page: Page) => 
-        page.name.toLowerCase().includes(search.toLowerCase()) || 
-        page.url.toLowerCase().includes(search.toLowerCase())
+        page.name?.toLowerCase().includes(search.toLowerCase()) || 
+        page.url?.toLowerCase().includes(search.toLowerCase())
     )
     .sort((a: Page, b: Page) => {
+      if (a.isOptimistic) return -1
+      if (b.isOptimistic) return 1
+
       const auditA = getLastAuditSafe(a.audits)
       const auditB = getLastAuditSafe(b.audits)
       
@@ -148,16 +228,10 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
       if (!auditB) return -1
 
       switch (sortBy) {
-        case 'mobile': 
-            // Croissant (identifier les pires scores)
-            return (auditA.performance_score || 0) - (auditB.performance_score || 0)
-        case 'desktop': 
-            return (auditA.performance_desktop_score || 0) - (auditB.performance_desktop_score || 0)
-        case 'seo':
-            return (auditA.seo_score || 0) - (auditB.seo_score || 0)
-        default: 
-            // Date décroissante (plus récent d'abord)
-            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        case 'mobile': return (auditA.performance_score || 0) - (auditB.performance_score || 0)
+        case 'desktop': return (auditA.performance_desktop_score || 0) - (auditB.performance_desktop_score || 0)
+        case 'seo': return (auditA.seo_score || 0) - (auditB.seo_score || 0)
+        default: return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       }
     })
 
@@ -165,22 +239,61 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
     <>
     <div className="space-y-6">
       
-      {/* BARRE D'OUTILS ET DE TRI (Améliorée avec couleurs) */}
+      {/* 1. ZONE D'AJOUT RAPIDE */}
+      <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-3">
+         <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <div className="p-1 bg-black text-white rounded">
+                <Plus className="h-3.5 w-3.5" />
+            </div>
+            Suivre une nouvelle page
+         </div>
+         
+         <form onSubmit={handleAddPage} className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+             
+             {/* Champ NOM (Placeholder épuré) */}
+             <div className="w-full md:w-1/3 relative">
+                <Input 
+                    placeholder="Nom" 
+                    className="bg-gray-50 border-gray-200 focus:bg-white transition-all pl-3"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                />
+             </div>
+
+             {/* Champ URL (Placeholder épuré) */}
+             <div className="w-full md:flex-1 relative">
+                <Input 
+                    placeholder="URL" 
+                    className="bg-gray-50 border-gray-200 focus:bg-white transition-all pl-3"
+                    value={newUrl}
+                    onChange={(e) => setNewUrl(e.target.value)}
+                />
+             </div>
+
+             <Button 
+                type="submit" 
+                disabled={!newUrl || isAddingPage} 
+                className="bg-black text-white hover:bg-zinc-800 shrink-0 md:w-auto w-full"
+             >
+                {isAddingPage ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CornerDownRight className="h-4 w-4 mr-2" />}
+                Ajouter
+             </Button>
+         </form>
+      </div>
+
+      {/* 2. BARRE D'OUTILS ET DE TRI */}
       <div className="flex flex-col xl:flex-row gap-4 justify-between bg-white p-4 rounded-xl border border-gray-200 shadow-sm xl:items-center">
-        
-        {/* Recherche */}
         <div className="relative w-full xl:max-w-xs">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
             <input 
                 type="text" 
-                placeholder="Filtrer par nom ou url..." 
+                placeholder="Filtrer..." 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-black transition-all"
             />
         </div>
 
-        {/* TRI VISUEL COLORÉ */}
         <div className="flex items-center gap-3 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0 no-scrollbar">
             <span className="text-sm text-gray-500 whitespace-nowrap hidden xl:block font-medium">Trier par :</span>
             
@@ -197,7 +310,6 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
                     <CalendarDays className="h-3.5 w-3.5" />
                     Récents
                 </button>
-
                 <button
                     onClick={() => setSortBy('mobile')}
                     className={cn(
@@ -211,7 +323,6 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
                     Mobile
                     {sortBy === 'mobile' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
                 </button>
-
                 <button
                     onClick={() => setSortBy('desktop')}
                     className={cn(
@@ -225,7 +336,6 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
                     Desktop
                     {sortBy === 'desktop' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
                 </button>
-
                 <button
                     onClick={() => setSortBy('seo')}
                     className={cn(
@@ -243,9 +353,28 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
         </div>
       </div>
 
-      {/* LISTE DES RÉSULTATS */}
+      {/* 3. LISTE DES RÉSULTATS */}
       <div className="space-y-3">
         {filteredPages.map((page: Page) => {
+            // Rendu Optimiste
+            if (page.isOptimistic) {
+                return (
+                    <div key={page.id} className="bg-blue-50/50 rounded-xl border border-blue-100 p-4 flex items-center gap-6 animate-pulse">
+                         <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                                <h3 className="font-bold text-gray-900 truncate">{page.name}</h3>
+                                <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200 animate-pulse">
+                                    <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Analyse en cours...
+                                </Badge>
+                            </div>
+                            <div className="text-xs text-gray-500 truncate">{page.url}</div>
+                        </div>
+                        <div className="text-sm text-gray-400 italic pr-4 hidden sm:block">Lighthouse s'échauffe...</div>
+                    </div>
+                )
+            }
+
+            // Rendu Standard
             const lastAudit = getLastAuditSafe(page.audits)
             const hasAudit = !!lastAudit
             const isError = hasAudit && lastAudit!.status_code >= 400
@@ -269,31 +398,31 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
                     {hasAudit && !isError ? (
                         <div className="flex items-center gap-2 md:gap-6 shrink-0 overflow-x-auto pb-2 md:pb-0">
                             
-                            {/* 1. Desktop */}
+                            {/* Desktop */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Monitor className="h-3 w-3" /> Desk</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_desktop_score)}`}>{lastAudit!.performance_desktop_score ?? '-'}</div>
                             </div>
                             
-                            {/* 2. Mobile */}
+                            {/* Mobile */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Smartphone className="h-3 w-3" /> Mob</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_score)}`}>{lastAudit!.performance_score ?? '-'}</div>
                             </div>
 
-                            {/* 3. SEO */}
+                            {/* SEO */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><SearchIcon className="h-3 w-3" /> SEO</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.seo_score)}`}>{lastAudit!.seo_score ?? '-'}</div>
                             </div>
 
-                            {/* 4. Accessibilité */}
+                            {/* Accessibilité */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Accessibility className="h-3 w-3" /> Access</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.accessibility_score)}`}>{lastAudit!.accessibility_score ?? '-'}</div>
                             </div>
 
-                            {/* 5. TTFB */}
+                            {/* TTFB */}
                             <div className="flex flex-col items-center min-w-[60px] border-l border-gray-100 pl-4 ml-2">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
                                     <Timer className="h-3 w-3" /> TTFB
@@ -319,7 +448,7 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
                             className="h-8 w-8 text-gray-400 hover:text-black hover:bg-gray-100"
                             onClick={() => handleRunAudit(page.url, page.id)}
                             disabled={isRunning}
-                            title="Lancer un nouvel audit"
+                            title="Relancer l'audit"
                         >
                             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                         </Button>
@@ -356,14 +485,12 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
       </div>
     </div>
 
-    {/* SIDE PANEL (DÉTAILS) */}
+    {/* SIDE PANEL & DIALOG (Inchangés) */}
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent className="w-full sm:max-w-xl md:max-w-2xl overflow-y-auto p-0 bg-white">
             <SheetHeader className="p-6 pb-2 border-b border-gray-100">
                 <SheetTitle>Rapport Détaillé</SheetTitle>
-                <SheetDescription>
-                    Analyse technique approfondie de la page.
-                </SheetDescription>
+                <SheetDescription>Analyse technique approfondie de la page.</SheetDescription>
             </SheetHeader>
             <div className="h-full">
                 {isLoadingReport ? (
@@ -374,15 +501,12 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
                 ) : selectedAuditReport ? (
                     <AuditDetails report={selectedAuditReport} />
                 ) : (
-                    <div className="p-8 text-center text-gray-500">
-                        Aucune donnée disponible.
-                    </div>
+                    <div className="p-8 text-center text-gray-500">Aucune donnée disponible.</div>
                 )}
             </div>
         </SheetContent>
     </Sheet>
 
-    {/* ALERT DIALOG (SUPPRESSION) */}
     <AlertDialog open={!!pageToDelete} onOpenChange={(open) => !open && setPageToDelete(null)}>
         <AlertDialogContent className="bg-white">
             <AlertDialogHeader>
@@ -390,9 +514,7 @@ export function PageList({ initialPages, folderId }: { initialPages: any[], fold
                     <AlertTriangle className="h-5 w-5" />
                     Supprimer cette page ?
                 </AlertDialogTitle>
-                <AlertDialogDescription>
-                    Cette action est irréversible. Toutes les données d&apos;historique et les rapports Lighthouse associés à cette URL seront définitivement effacés.
-                </AlertDialogDescription>
+                <AlertDialogDescription>Cette action est irréversible.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
                 <AlertDialogCancel>Annuler</AlertDialogCancel>
