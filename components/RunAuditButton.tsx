@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { runGlobalAudit } from '@/app/actions'
 import { Button } from '@/components/ui/button'
-import { Loader2, Zap } from 'lucide-react'
+import { Loader2, Play } from 'lucide-react' // 1. On change l'import ici
 import { toast } from "sonner"
 
 interface RunAuditButtonProps {
@@ -62,8 +62,8 @@ export function RunAuditButton({ folderId }: RunAuditButtonProps) {
           </>
         ) : (
           <>
-            {/* J'ai gardé ton éclair jaune, c'est sympa */}
-            <Zap className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+            {/* 2. On change l'icône et la couleur ici (Bleu) */}
+            <Play className="h-4 w-4 fill-blue-400 text-blue-400" />
             <span className="font-semibold text-sm">Lancer l'audit</span>
           </>
         )}
