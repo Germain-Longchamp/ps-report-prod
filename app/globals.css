@@ -103,4 +103,16 @@
   button:disabled {
     cursor: not-allowed;
   }
+
+  /* Personnalisation de la sélection de texte */
+  ::selection {
+    background-color: #000000; /* Fond noir */
+    color: #ffffff;            /* Texte blanc */
+  }
+  
+  /* Pour assurer la compatibilité Firefox */
+  ::-moz-selection {
+    background-color: #000000;
+    color: #ffffff;
+  }
 }
