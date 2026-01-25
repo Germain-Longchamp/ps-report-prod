@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { AlertOctagon, ArrowRight, Globe, Layout, CheckCircle2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { cookies } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,10 +14,34 @@ export default async function IncidentsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // 2. Récupération des Données
+  // --- LOGIQUE MULTI-TENANT ---
+  // A. Récupérer les organisations valides pour l'utilisateur
+  const { data: memberships } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', user.id)
+
+  const validOrgIds = memberships?.map(m => m.organization_id) || []
+
+  // B. Récupérer l'organisation active via Cookie ou Fallback
+  const cookieStore = await cookies()
+  let activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+
+  if (!activeOrgId || !validOrgIds.includes(activeOrgId)) {
+      activeOrgId = validOrgIds[0]
+  }
+
+  // 2. Récupération des Données FILTRÉES par Organisation
   const [foldersRes, pagesRes] = await Promise.all([
-    supabase.from('folders').select('*, audits!inner(status_code, created_at, url)'),
-    supabase.from('pages').select('*, audits!inner(status_code, created_at, url)')
+    // Folders de l'organisation active
+    supabase.from('folders')
+        .select('*, audits!inner(status_code, created_at, url)')
+        .eq('organization_id', activeOrgId),
+    
+    // Pages dont le folder appartient à l'organisation active
+    supabase.from('pages')
+        .select('*, folders!inner(organization_id), audits!inner(status_code, created_at, url)')
+        .eq('folders.organization_id', activeOrgId)
   ])
 
   // 3. Filtrage des Incidents
@@ -29,7 +54,9 @@ export default async function IncidentsPage() {
     if (audits.length > 0) {
         // On prend le dernier audit
         const lastAudit = audits.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
-        if (lastAudit.status_code >= 400) {
+        
+        // CORRECTION : On inclut le code 0 (Crash/Timeout) en plus des erreurs HTTP
+        if (lastAudit.status_code === 0 || lastAudit.status_code >= 400) {
             incidents.push({
                 type: 'site',
                 id: folder.id,
@@ -50,7 +77,9 @@ export default async function IncidentsPage() {
     if (audits.length > 0) {
         // On prend le dernier audit
         const lastAudit = audits.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
-        if (lastAudit.status_code >= 400) {
+        
+        // CORRECTION : On inclut le code 0 ici aussi
+        if (lastAudit.status_code === 0 || lastAudit.status_code >= 400) {
             incidents.push({
                 type: 'page',
                 id: page.id,
@@ -58,7 +87,7 @@ export default async function IncidentsPage() {
                 url: page.url,
                 statusCode: lastAudit.status_code,
                 detectedAt: lastAudit.created_at,
-                folderId: page.folder_id
+                folderId: page.folder_id // Pour le lien "Diagnostiquer" qui renvoie vers le site parent
             })
         }
     }
@@ -70,7 +99,7 @@ export default async function IncidentsPage() {
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-10">
       
-      {/* --- HEADER (Sans date, style harmonisé) --- */}
+      {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
         <div>
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
@@ -105,7 +134,7 @@ export default async function IncidentsPage() {
                         
                         {/* 1. STATUS CODE */}
                         <div className="flex flex-col items-center justify-center h-14 w-16 bg-red-50 text-red-700 rounded-lg shrink-0 border border-red-100">
-                            <span className="text-lg font-bold leading-none">{item.statusCode}</span>
+                            <span className="text-lg font-bold leading-none">{item.statusCode === 0 ? 'ERR' : item.statusCode}</span>
                             <span className="text-[10px] font-semibold uppercase opacity-80 mt-1">Erreur</span>
                         </div>
 

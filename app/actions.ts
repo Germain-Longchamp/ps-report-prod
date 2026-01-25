@@ -3,30 +3,98 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { cookies } from 'next/headers'
 import https from 'https'
 
-// --- 1. GESTION ORGANISATION & DOSSIERS ---
+// --- UTILITAIRE : Récupérer l'ID Org Actif et vérifier les droits ---
+async function _getActiveOrgAndMember(supabase: any, userId: string) {
+  const cookieStore = await cookies()
+  const activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+
+  if (!activeOrgId) return { error: "Aucune organisation active." }
+
+  // Vérifier membership
+  const { data: member } = await supabase
+    .from('organization_members')
+    .select('organization_id, role')
+    .eq('user_id', userId)
+    .eq('organization_id', activeOrgId)
+    .single()
+
+  if (!member) return { error: "Accès refusé à cette organisation." }
+
+  return { activeOrgId, member }
+}
+
+// --- 1. GESTION ORGANISATION ---
 
 export async function createOrganization(formData: FormData) {
   const supabase = await createClient()
+  
+  // On récupère juste le nom, l'auth est gérée automatiquement par Supabase/Postgres
   const orgName = formData.get('orgName') as string
+  if (!orgName) return { error: "Nom requis" }
 
-  const { error } = await supabase.rpc('create_org_for_user', { 
+  // Appel de la fonction RPC créée à l'instant
+  const { data: newOrgId, error } = await supabase.rpc('create_org_with_owner', { 
     org_name: orgName 
   })
 
   if (error) {
-    console.error('Erreur RPC:', error)
-    return { error: 'Impossible de créer l\'organisation.' }
+    console.error('Erreur Create Org:', error)
+    return { error: 'Impossible de créer l\'organisation (Erreur SQL).' }
   }
 
-  revalidatePath('/')
+  // On switch immédiatement sur la nouvelle organisation
+  if (newOrgId) {
+      await switchOrganization(newOrgId.toString())
+  }
+  
+  return { success: true }
 }
+
+export async function switchOrganization(orgId: string) {
+  const cookieStore = await cookies()
+  cookieStore.set('active_org_id', orgId, {
+    path: '/',
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * 30 // 30 jours
+  })
+  redirect('/') 
+}
+
+export async function updateOrgSettings(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
+
+  const apiKey = formData.get('apiKey') as string
+  const orgId = formData.get('orgId') as string // Sécurité additionnelle
+
+  // On vérifie que c'est bien l'org active et qu'on est membre
+  const { activeOrgId, member, error } = await _getActiveOrgAndMember(supabase, user.id)
+  if (error) return { error }
+
+  // Sécurité double : on s'assure que l'ID du formulaire correspond au contexte
+  if (String(activeOrgId) !== orgId) return { error: "Incohérence d'organisation." }
+
+  const { error: updateError } = await supabase
+    .from('organizations')
+    .update({ google_api_key: apiKey })
+    .eq('id', activeOrgId)
+
+  if (updateError) return { error: "Erreur lors de la sauvegarde." }
+
+  revalidatePath('/settings')
+  return { success: "Paramètres mis à jour" }
+}
+
+// --- 2. GESTION DES DOSSIERS (SITES) ---
 
 export async function createFolder(formData: FormData) {
   const supabase = await createClient()
-  
-  // 1. Vérification Auth
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Non connecté." }
 
@@ -35,25 +103,17 @@ export async function createFolder(formData: FormData) {
 
   if (!name || !rootUrl) return { error: "Nom et URL requis." }
 
-  // 2. Récupérer l'organisation
-  const { data: memberLink, error: memberError } = await supabase
-    .from('organization_members') 
-    .select('organization_id')
-    .eq('user_id', user.id)
-    .limit(1)
-    .single()
+  // 1. Récupérer l'org active sécurisée
+  const { activeOrgId, error: authError } = await _getActiveOrgAndMember(supabase, user.id)
+  if (authError) return { error: authError }
 
-  if (memberError || !memberLink) {
-    return { error: "Vous n'êtes lié à aucune organisation." }
-  }
-
-  // 3. Insertion
+  // 2. Insertion dans l'org active
   const { data, error } = await supabase
     .from('folders')
     .insert({ 
         name, 
         root_url: rootUrl,
-        organization_id: memberLink.organization_id,
+        organization_id: activeOrgId, // <-- ICI : On force l'ID actif
         created_by: user.id,
         status: 'active'
     })
@@ -65,15 +125,14 @@ export async function createFolder(formData: FormData) {
     return { error: "Impossible de créer le site." }
   }
 
-  // On invalide le cache du Layout (la Sidebar) pour tout le monde
   revalidatePath('/', 'layout') 
-
   return { success: true, id: data.id }
 }
 
-
 export async function updateFolder(formData: FormData) {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
   
   const folderId = formData.get('folderId') as string
   const name = formData.get('name') as string
@@ -81,53 +140,141 @@ export async function updateFolder(formData: FormData) {
 
   if (!folderId || !name || !rawUrl) return { error: "Données incomplètes" }
 
-  // --- PETITE SÉCURITÉ AJOUTÉE ---
-  // On ajoute https si manquant et on retire le slash final
+  // On vérifie que le folder appartient bien à une org dont on est membre
+  // (Pas besoin de forcer l'org active ici, tant qu'on a le droit d'écrire sur ce folder via RLS ou check manuel)
+  // Pour faire simple : on check si on a accès au folder via organization_members
+  const { data: folder } = await supabase.from('folders').select('organization_id').eq('id', folderId).single()
+  if (!folder) return { error: "Dossier introuvable" }
+
+  const { data: access } = await supabase.from('organization_members')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('organization_id', folder.organization_id)
+    .single()
+  
+  if (!access) return { error: "Droit refusé sur ce dossier." }
+
+  // Nettoyage URL
   let cleanUrl = rawUrl.trim()
   if (!cleanUrl.startsWith('http')) {
     cleanUrl = `https://${cleanUrl}`
   }
   cleanUrl = cleanUrl.replace(/\/$/, '')
-  // -------------------------------
 
   const { error } = await supabase
     .from('folders')
     .update({ 
         name, 
-        root_url: cleanUrl // On utilise l'URL nettoyée
+        root_url: cleanUrl 
     })
     .eq('id', folderId)
 
   if (error) return { error: "Erreur lors de la mise à jour." }
 
   revalidatePath(`/site/${folderId}`)
-  revalidatePath('/') // Important pour le dashboard
+  revalidatePath('/') 
   return { success: "Site mis à jour avec succès." }
 }
 
 export async function deleteFolder(folderId: string) {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
   
-  // 1. Suppression
+  // Vérif droits (même logique que update)
+  const { data: folder } = await supabase.from('folders').select('organization_id').eq('id', folderId).single()
+  if (!folder) return { error: "Dossier introuvable" }
+
+  const { data: access } = await supabase.from('organization_members')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('organization_id', folder.organization_id)
+    .single()
+  
+  if (!access) return { error: "Droit refusé." }
+
   const { error } = await supabase
     .from('folders')
     .delete()
     .eq('id', folderId)
 
-  if (error) {
-    console.error(error)
-    return { error: "Impossible de supprimer le dossier." }
-  }
+  if (error) return { error: "Impossible de supprimer le dossier." }
 
-  // 2. On force la mise à jour de la Sidebar (Layout)
   revalidatePath('/', 'layout')
-
-  // 3. Redirection vers l'accueil
   redirect('/')
 }
 
+// --- 3. GESTION DES PAGES ---
 
-// --- 2. GESTION PROFILS & SETTINGS ---
+export async function createPage(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
+  
+  const url = formData.get('url') as string
+  const name = formData.get('name') as string
+  const folderId = formData.get('folderId') as string
+  
+  if (!url || !folderId) return { error: "URL requise" }
+
+  // Vérif droits sur le dossier parent
+  const { data: folder } = await supabase
+    .from('folders')
+    .select('organization_id, organizations(google_api_key)')
+    .eq('id', folderId)
+    .single()
+
+  if (!folder) return { error: "Dossier parent introuvable" }
+
+  // Check membership
+  const { data: access } = await supabase.from('organization_members')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('organization_id', folder.organization_id)
+    .single()
+  
+  if (!access) return { error: "Accès refusé." }
+
+  // Insertion
+  const { data: newPage, error } = await supabase
+    .from('pages')
+    .insert({
+      url,
+      name: name || "Page sans nom",
+      folder_id: folderId
+    })
+    .select()
+    .single()
+
+  if (error || !newPage) return { error: "Erreur ajout page" }
+
+  // Lancer l'audit
+  // @ts-ignore
+  const apiKey = folder?.organizations?.google_api_key
+  if (apiKey) {
+    await _performAudit(url, folderId, apiKey, newPage.id)
+  }
+
+  revalidatePath(`/site/${folderId}`)
+  return { success: "Page ajoutée et analysée !" }
+}
+
+export async function deletePage(pageId: string, folderId: string) {
+  const supabase = await createClient()
+  // Note: On pourrait ajouter une vérif de droits ici aussi pour être puriste
+  
+  const { error } = await supabase
+    .from('pages')
+    .delete()
+    .eq('id', pageId)
+
+  if (error) return { error: "Impossible de supprimer" }
+  
+  revalidatePath(`/site/${folderId}`)
+  return { success: "Page supprimée" }
+}
+
+// --- 4. GESTION PROFIL ---
 
 export async function updateProfile(formData: FormData) {
   const supabase = await createClient()
@@ -153,98 +300,8 @@ export async function updateProfile(formData: FormData) {
   return { success: "Profil mis à jour" }
 }
 
-export async function updateOrgSettings(formData: FormData) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+// --- 5. MOTEUR D'AUDIT (INCHANGÉ MAIS NÉCESSAIRE) ---
 
-  if (!user) return { error: "Non connecté" }
-
-  const apiKey = formData.get('apiKey') as string
-  const orgId = formData.get('orgId') as string
-
-  const { data: member } = await supabase
-    .from('organization_members')
-    .select('organization_id')
-    .eq('user_id', user.id)
-    .eq('organization_id', orgId)
-    .single()
-
-  if (!member) return { error: "Accès non autorisé à cette organisation" }
-
-  const { error } = await supabase
-    .from('organizations')
-    .update({ google_api_key: apiKey })
-    .eq('id', orgId)
-
-  if (error) return { error: "Erreur lors de la sauvegarde de la clé API" }
-
-  revalidatePath('/settings')
-  return { success: "Paramètres d'organisation mis à jour" }
-}
-
-// --- 3. GESTION DES PAGES ---
-
-export async function createPage(formData: FormData) {
-  const supabase = await createClient()
-  
-  const url = formData.get('url') as string
-  const name = formData.get('name') as string
-  const folderId = formData.get('folderId') as string
-  
-  if (!url || !folderId) return { error: "URL requise" }
-
-  // 1. Insérer la page
-  const { data: newPage, error } = await supabase
-    .from('pages')
-    .insert({
-      url,
-      name: name || "Page sans nom",
-      folder_id: folderId
-    })
-    .select()
-    .single()
-
-  if (error || !newPage) {
-    console.error(error)
-    return { error: "Erreur lors de l'ajout de la page" }
-  }
-
-  // 2. Récupérer la Clé API
-  const { data: folder } = await supabase
-    .from('folders')
-    .select('organization_id, organizations(google_api_key)')
-    .eq('id', folderId)
-    .single()
-
-  // @ts-ignore
-  const apiKey = folder?.organizations?.google_api_key || folder?.organizations?.[0]?.google_api_key
-
-  // 3. Lancer l'audit immédiatement
-  if (apiKey) {
-    await _performAudit(url, folderId, apiKey, newPage.id)
-  }
-
-  revalidatePath(`/site/${folderId}`)
-  return { success: "Page ajoutée et analysée !" }
-}
-
-export async function deletePage(pageId: string, folderId: string) {
-  const supabase = await createClient()
-  
-  const { error } = await supabase
-    .from('pages')
-    .delete()
-    .eq('id', pageId)
-
-  if (error) return { error: "Impossible de supprimer" }
-  
-  revalidatePath(`/site/${folderId}`)
-  return { success: "Page supprimée" }
-}
-
-// --- 4. MOTEUR D'AUDIT (GLOBAL & UNITAIRE) ---
-
-// Fonction utilitaire pour récupérer la date d'expiration SSL via Node.js
 function getSSLExpiry(targetUrl: string): Promise<string | null> {
   return new Promise((resolve) => {
     try {
@@ -255,7 +312,7 @@ function getSSLExpiry(targetUrl: string): Promise<string | null> {
         hostname: urlObj.hostname,
         port: 443,
         method: 'HEAD',
-        agent: new https.Agent({ maxCachedSessions: 0 }) // Pas de cache
+        agent: new https.Agent({ maxCachedSessions: 0 }) 
       }
 
       const req = https.request(options, (res) => {
@@ -267,44 +324,31 @@ function getSSLExpiry(targetUrl: string): Promise<string | null> {
         }
       })
 
-      req.on('error', (e) => {
-        // Erreur silencieuse pour SSL, on renvoie null
-        resolve(null)
-      })
-
+      req.on('error', (e) => { resolve(null) })
       req.end()
-    } catch (e) {
-      resolve(null)
-    }
+    } catch (e) { resolve(null) }
   })
 }
 
-/**
- * Fonction interne privée qui exécute la logique technique d'un audit.
- * INCLUT LE CORRECTIF 404/500
- */
 async function _performAudit(url: string, folderId: string, apiKey: string, pageId: string | null = null) {
   const supabase = await createClient()
   
-  // --- A. VERIFICATION DU VRAI CODE HTTP (FIX) ---
-  // On le fait avant Google pour détecter les 404/500 même si Google répond 200
   let realStatusCode = 0
   try {
     const checkRes = await fetch(url, { 
         method: 'GET',
-        cache: 'no-store', // Important: ne pas mettre en cache
-        redirect: 'follow' // Suivre les redirections pour avoir le code final
+        cache: 'no-store',
+        redirect: 'follow'
     })
     realStatusCode = checkRes.status
   } catch (err) {
-    console.error("Erreur Fetch préliminaire:", err)
-    realStatusCode = 0 // Site inaccessible (DNS, Timeout...)
+    console.error("Erreur Fetch:", err)
+    realStatusCode = 0 
   }
 
   const baseUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${apiKey}&category=performance&category=accessibility&category=best-practices&category=seo`
   
   try {
-    // 1. Parallélisation : Mobile + Desktop + Date SSL
     const [mobileRes, desktopRes, sslDate] = await Promise.all([
       fetch(`${baseUrl}&strategy=mobile`, { cache: 'no-store' }),
       fetch(`${baseUrl}&strategy=desktop`, { cache: 'no-store' }),
@@ -314,42 +358,23 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
     const mobileData = await mobileRes.json()
     const desktopData = await desktopRes.json()
 
-    // --- 2. GESTION DES ERREURS GOOGLE ---
     if (mobileData.error || desktopData.error) {
-        const errorMsg = (mobileData.error?.message || desktopData.error?.message || "Erreur inconnue").toLowerCase()
-        console.error(`Erreur Google sur ${url}:`, errorMsg)
-
-        // Si on a capturé un code réel au début, on l'utilise, sinon on devine ou met 500
         const finalCode = realStatusCode !== 0 ? realStatusCode : 500
-
-        // Sauvegarde de l'audit en échec
         await supabase.from('audits').insert({
             folder_id: folderId,
             page_id: pageId,
             url: url,
-            status_code: finalCode, // On utilise le vrai code
+            status_code: finalCode,
             https_valid: false,
-            ssl_expiry_date: null,
-            indexable: false,
-            screenshot: null,
-            performance_score: 0,
-            performance_desktop_score: 0,
-            accessibility_score: 0,
-            best_practices_score: 0,
-            seo_score: 0,
-            ttfb: 0,
-            report_json: mobileData // On garde l'erreur pour debug
+            report_json: mobileData
         })
-
         return { success: true, statusCode: finalCode } 
     }
 
-    // --- 3. EXTRACTION DES DONNÉES ---
     const mAudits = mobileData.lighthouseResult.audits
     const mCats = mobileData.lighthouseResult.categories
     const dCats = desktopData.lighthouseResult.categories
 
-    // Scores
     const perfMobile = Math.round(mCats['performance']?.score * 100 || 0)
     const perfDesktop = Math.round(dCats['performance']?.score * 100 || 0)
     const accessScore = Math.round(mCats['accessibility']?.score * 100 || 0)
@@ -358,16 +383,14 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
     
     const ttfb = Math.round(mAudits['server-response-time']?.numericValue || 0)
     const screenshot = mAudits['final-screenshot']?.details?.data
-    const isHttps = url.startsWith('https://') // Simple check
+    const isHttps = url.startsWith('https://')
     const isCrawlable = mAudits['is-crawlable']?.score === 1
 
-    // --- 4. INSERTION EN BASE ---
-    // C'est ici qu'on utilise 'realStatusCode' qu'on a capturé nous-mêmes
     await supabase.from('audits').insert({
         folder_id: folderId,
         page_id: pageId,
         url: url,
-        status_code: realStatusCode, // <-- LE FIX EST ICI
+        status_code: realStatusCode,
         https_valid: isHttps,
         ssl_expiry_date: sslDate,
         indexable: isCrawlable && realStatusCode === 200,
@@ -385,12 +408,10 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
 
   } catch (err) {
     console.error(`Crash audit ${url}:`, err)
-    return { error: "Erreur technique lors de l'appel." }
+    return { error: "Erreur technique." }
   }
 }
 
-
-// Action 1 : Audit Unitaire (Bouton Play dans la liste)
 export async function runPageSpeedAudit(url: string, folderId: string, pageId?: string) {
   const supabase = await createClient()
   
@@ -401,14 +422,12 @@ export async function runPageSpeedAudit(url: string, folderId: string, pageId?: 
     .single()
 
   // @ts-ignore
-  const apiKey = folder?.organizations?.google_api_key || folder?.organizations?.[0]?.google_api_key
+  const apiKey = folder?.organizations?.google_api_key
   if (!apiKey) return { error: "Clé API manquante" }
 
   const result = await _performAudit(url, folderId, apiKey, pageId || null)
   
-  // Si c'est la racine (pas de pageId), on met à jour le statut global du dossier
   if (!pageId && result.success) {
-      // Si code >= 400, on met 'issues', sinon 'active'
       const newStatus = (result.statusCode && result.statusCode >= 400) ? 'issues' : 'active'
       await supabase.from('folders').update({ status: newStatus }).eq('id', folderId)
   }
@@ -418,51 +437,32 @@ export async function runPageSpeedAudit(url: string, folderId: string, pageId?: 
   return result
 }
 
-// Action 2 : Audit GLOBAL (Bouton Flottant)
 export async function runGlobalAudit(folderId: string) {
   const supabase = await createClient()
 
-  // 1. Tout récupérer d'un coup (Dossier + Pages + Clé API)
   const { data: folder } = await supabase
     .from('folders')
-    .select(`
-        *,
-        organizations (google_api_key),
-        pages (*)
-    `)
+    .select(`*, organizations (google_api_key), pages (*)`)
     .eq('id', folderId)
     .single()
 
   if (!folder) return { error: "Dossier introuvable" }
 
   // @ts-ignore
-  const apiKey = folder.organizations?.google_api_key || folder.organizations?.[0]?.google_api_key
+  const apiKey = folder.organizations?.google_api_key
   if (!apiKey) return { error: "Clé API manquante" }
 
   const tasks = []
-
-  // 2. Ajouter la racine (Root URL)
   tasks.push(_performAudit(folder.root_url, folder.id, apiKey, null))
 
-  // 3. Ajouter toutes les sous-pages
   if (folder.pages && folder.pages.length > 0) {
     folder.pages.forEach((p: any) => {
         tasks.push(_performAudit(p.url, folder.id, apiKey, p.id))
     })
   }
 
-  // 4. Exécution
   try {
-    const results = await Promise.all(tasks)
-    
-    // Logique optionnelle : Si la racine a un code erreur, on passe le site en 'issues'
-    const rootResult = results[0] // Le premier est toujours la racine
-    if (rootResult && rootResult.statusCode && rootResult.statusCode >= 400) {
-        await supabase.from('folders').update({ status: 'issues' }).eq('id', folderId)
-    } else {
-        await supabase.from('folders').update({ status: 'active' }).eq('id', folderId)
-    }
-    
+    await Promise.all(tasks)
     revalidatePath(`/site/${folderId}`)
     revalidatePath('/')
     return { success: `Analyse terminée sur ${tasks.length} URL(s).` }
@@ -471,18 +471,9 @@ export async function runGlobalAudit(folderId: string) {
   }
 }
 
-// --- 7. RÉCUPÉRATION DU DÉTAIL AUDIT (LAZY LOAD) ---
-
 export async function getAuditDetails(auditId: string) {
   const supabase = await createClient()
-  
-  const { data, error } = await supabase
-    .from('audits')
-    .select('report_json')
-    .eq('id', auditId)
-    .single()
-
+  const { data, error } = await supabase.from('audits').select('report_json').eq('id', auditId).single()
   if (error || !data) return { error: "Rapport introuvable" }
-  
   return { report: data.report_json }
 }

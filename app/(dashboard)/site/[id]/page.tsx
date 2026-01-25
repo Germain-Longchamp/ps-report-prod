@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { 
   ChevronRight, 
   ExternalLink,
@@ -33,7 +34,23 @@ export default async function Page({ params }: Props) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // 2. Data Fetching
+  // --- LOGIQUE MULTI-TENANT ---
+  // On récupère l'ID de l'organisation active pour sécuriser l'accès
+  const { data: memberships } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', user.id)
+
+  const validOrgIds = memberships?.map(m => m.organization_id) || []
+
+  const cookieStore = await cookies()
+  let activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+
+  if (!activeOrgId || !validOrgIds.includes(activeOrgId)) {
+      activeOrgId = validOrgIds[0]
+  }
+
+  // 2. Data Fetching (Sécurisé par organization_id)
   const { data: folder } = await supabase
     .from('folders')
     .select(`
@@ -49,8 +66,10 @@ export default async function Page({ params }: Props) {
         )
     `)
     .eq('id', id)
+    .eq('organization_id', activeOrgId) // <--- VERROUILLAGE ICI
     .single()
 
+  // Si le dossier n'existe pas ou n'appartient pas à l'org active -> Redirection
   if (!folder) redirect('/')
 
   const pages = folder.pages || []
@@ -59,11 +78,9 @@ export default async function Page({ params }: Props) {
   let liveStatus = 0
   
   try {
-    // Timeout de 2.5s : si le site ne répond pas vite ou si DNS HS, on coupe.
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 2500)
     
-    // On s'assure d'avoir une URL valide pour le fetch
     let targetUrl = folder.root_url
     if (!targetUrl.startsWith('http')) {
         targetUrl = `https://${targetUrl}`
@@ -79,13 +96,9 @@ export default async function Page({ params }: Props) {
     liveStatus = res.status
 
   } catch (error) {
-    // C'EST ICI QUE LA MAGIE OPÈRE :
-    // Si DNS introuvable (votre cas), Timeout, ou erreur SSL => on capture l'erreur.
-    // On force le statut à 0, ce qui sera interprété comme "DOWN" par l'UI.
     liveStatus = 0
   }
 
-  // Est-ce que le site est en ligne ? (Seulement 200-399 est considéré comme Vert)
   const isSiteUp = liveStatus >= 200 && liveStatus < 400
 
   // --- 4. RÉCUPÉRATION DONNÉES HISTORIQUES ---
@@ -97,7 +110,6 @@ export default async function Page({ params }: Props) {
   const isSSLValid = folder.root_url.startsWith('https') && isSiteUp
   const isIndexable = lastGlobalAudit ? (lastGlobalAudit.seo_score || 0) > 50 : true
   
-  // Screenshot du dernier audit valide (s'il existe)
   const screenshotUrl = lastGlobalAudit?.screenshot
 
   return (
@@ -152,7 +164,7 @@ export default async function Page({ params }: Props) {
           <h2 className="text-xl font-semibold text-gray-900">Santé du site</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
-              {/* Carte Status (Rouge si liveStatus === 0) */}
+              {/* Carte Status */}
               <Card className={`border-0 shadow-sm flex flex-col justify-between p-6 h-full relative overflow-hidden transition-all duration-300
                   ${isSiteUp ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-red-600 text-white shadow-red-200'}
               `}>
@@ -172,7 +184,6 @@ export default async function Page({ params }: Props) {
                           </div>
                       </div>
                       
-                      {/* Pulse si c'est OK, Fixe si c'est KO */}
                       <div className="relative flex h-3 w-3 mt-1.5">
                           {isSiteUp ? (
                             <>
@@ -188,7 +199,6 @@ export default async function Page({ params }: Props) {
                   <div className="mt-4 flex items-center gap-2 text-sm font-medium opacity-90">
                       <Activity className="h-4 w-4" />
                       <span className="font-mono">
-                         {/* Affiche "ERR" si liveStatus est 0 (ex: erreur DNS) */}
                          CODE {liveStatus === 0 ? 'ERR (DNS/Timeout)' : liveStatus}
                       </span>
                   </div>

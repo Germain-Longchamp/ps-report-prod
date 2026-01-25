@@ -1,9 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
-import { DashboardSidebar } from '@/components/DashboardSidebar'
-
-// Force le rendu dynamique pour avoir les données à jour
-export const dynamic = 'force-dynamic'
+import { Sidebar } from '@/components/Sidebar'
+import { cookies } from 'next/headers'
 
 export default async function DashboardLayout({
   children,
@@ -12,58 +10,53 @@ export default async function DashboardLayout({
 }) {
   const supabase = await createClient()
 
-  // 1. Auth
+  // 1. Auth Check
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // 2. Data pour la liste des dossiers
-  const { data: folders } = await supabase
-    .from('folders')
-    .select('id, name')
-    .order('created_at', { ascending: false })
+  // 2. Récupérer TOUTES les organisations du membre
+  // On fait une jointure pour avoir le nom de l'organisation
+  const { data: memberships } = await supabase
+    .from('organization_members')
+    .select('organization_id, organizations(id, name)')
+    .eq('user_id', user.id)
 
-  // 3. CALCUL DU NOMBRE D'INCIDENTS (Badge)
-  // On récupère le strict minimum pour calculer vite
-  const [foldersRes, pagesRes] = await Promise.all([
-    supabase.from('folders').select('id, audits(status_code, created_at)'),
-    supabase.from('pages').select('id, audits(status_code, created_at)')
-  ])
+  // On formate les données proprement
+  const userOrgs = memberships?.map((m: any) => ({
+      id: m.organizations.id,
+      name: m.organizations.name
+  })) || []
 
-  let incidentCount = 0
+  // Sécurité : Si l'user n'a aucune org, il ne devrait pas être là
+  if (userOrgs.length === 0) {
+      // Tu pourrais rediriger vers une page "Créer une org" ici
+      // Pour l'instant on laisse couler ou on redirige vers logout
+  }
 
-  // Check Sites
-  const allFolders = foldersRes.data || []
-  allFolders.forEach((f: any) => {
-    if (f.audits?.length > 0) {
-        const last = f.audits.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
-        if (last.status_code >= 400) incidentCount++
-    }
-  })
+  // 3. GESTION DU CONTEXTE (Active Org)
+  const cookieStore = await cookies()
+  const cookieOrgId = cookieStore.get('active_org_id')?.value
+  
+  // On vérifie que le cookie correspond bien à une org de l'utilisateur (Anti-triche)
+  let activeOrgId = cookieOrgId ? parseInt(cookieOrgId) : null
+  const isMemberOfActive = userOrgs.find(o => o.id === activeOrgId)
 
-  // Check Pages
-  const allPages = pagesRes.data || []
-  allPages.forEach((p: any) => {
-    if (p.audits?.length > 0) {
-        const last = p.audits.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
-        if (last.status_code >= 400) incidentCount++
-    }
-  })
+  // Si pas de cookie ou cookie invalide, on force la première org de la liste
+  if (!activeOrgId || !isMemberOfActive) {
+      activeOrgId = userOrgs[0]?.id
+  }
 
   return (
-    <div className="flex min-h-screen bg-gray-50/30">
-      
-      {/* On passe le compteur en props */}
-      <DashboardSidebar 
-        userEmail={user.email} 
-        folders={folders} 
-        incidentCount={incidentCount} // <--- NOUVEAU
+    <div className="flex h-screen bg-gray-50 font-sans text-gray-900 selection:bg-black selection:text-white">
+      {/* On passe tout à la sidebar */}
+      <Sidebar 
+          userEmail={user.email!} 
+          organizations={userOrgs} 
+          activeOrgId={activeOrgId!} 
       />
-
-      {/* Main Content */}
-      <main className="flex-1 md:ml-64 transition-all duration-300">
+      <main className="flex-1 overflow-y-auto">
         {children}
       </main>
-
     </div>
   )
 }

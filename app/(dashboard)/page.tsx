@@ -2,8 +2,11 @@ import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Folder, FileText, AlertOctagon, Activity, Globe, Calendar, CheckCircle2, Server, Layers } from 'lucide-react'
+import { Folder, FileText, AlertOctagon, Activity, Globe, Calendar, CheckCircle2, Server, Layers, Plus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { cookies } from 'next/headers'
+import { CreateOrgModal } from '@/components/CreateOrgModal'
+import { Button } from '@/components/ui/button'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,20 +17,59 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // --- LOGIQUE MULTI-TENANT ---
+  const { data: memberships } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', user.id)
+
+  const validOrgIds = memberships?.map(m => m.organization_id) || []
+
+  // CAS : NOUVEL UTILISATEUR SANS ORGANISATION
+  if (validOrgIds.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
+        <div className="bg-blue-50 p-4 rounded-full mb-6">
+            <Server className="h-12 w-12 text-blue-600" />
+        </div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Bienvenue sur PS Report</h1>
+        <p className="text-gray-500 max-w-md mb-8">
+          Pour commencer à monitorer vos sites, vous devez créer votre première organisation ou être invité dans une équipe.
+        </p>
+        <CreateOrgModal>
+            <Button size="lg" className="bg-blue-600 hover:bg-blue-700 text-white">
+                <Plus className="h-5 w-5 mr-2" />
+                Créer mon organisation
+            </Button>
+        </CreateOrgModal>
+      </div>
+    )
+  }
+
+  // 2. Récupérer l'organisation active
+  const cookieStore = await cookies()
+  let activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+
+  if (!activeOrgId || !validOrgIds.includes(activeOrgId)) {
+      activeOrgId = validOrgIds[0]
+  }
+
   // --- LOGIQUE DATE & HEURE ---
   const now = new Date()
   const formattedDate = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const hour = now.getHours()
   const greeting = hour >= 18 ? 'Bonsoir' : 'Bonjour'
 
-  // 2. RÉCUPÉRATION DES DONNÉES
+  // 3. RÉCUPÉRATION DES DONNÉES FILTRÉES
   const [foldersRes, pagesRes, profileRes] = await Promise.all([
     supabase.from('folders')
       .select('*, audits(id, status_code, created_at)')
+      .eq('organization_id', activeOrgId)
       .order('created_at', { ascending: false }),
     
     supabase.from('pages')
-      .select('*, audits(id, status_code, created_at)'),
+      .select('*, folders!inner(organization_id), audits(id, status_code, created_at)')
+      .eq('folders.organization_id', activeOrgId),
 
     supabase.from('profiles').select('first_name').eq('id', user.id).single()
   ])
@@ -38,7 +80,7 @@ export default async function DashboardPage() {
   const profile = profileRes.data
   const userName = profile?.first_name || user.email?.split('@')[0] || 'Utilisateur'
 
-  // --- 3. CALCUL DES INCIDENTS ---
+  // 4. CALCUL DES INCIDENTS
   let totalIncidents = 0
 
   const hasError = (audits: any[]) => {
@@ -47,7 +89,6 @@ export default async function DashboardPage() {
       return last.status_code === 0 || last.status_code >= 400
   }
 
-  // A. Racines
   const folderStatusMap: Record<string, number> = {}
   folders.forEach(folder => {
       const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
@@ -57,17 +98,14 @@ export default async function DashboardPage() {
       }
   })
 
-  // B. Sous-pages
   pages.forEach(page => {
-      if (hasError(page.audits)) {
-          totalIncidents++
-      }
+      if (hasError(page.audits)) totalIncidents++
   })
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-12">
       
-      {/* --- HEADER --- */}
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
         <div>
             <div className="flex items-center gap-2 text-sm text-gray-500 font-medium mb-2 uppercase tracking-wide">
@@ -78,11 +116,10 @@ export default async function DashboardPage() {
                 {greeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 capitalize">{userName}</span>
             </h1>
             <p className="text-gray-500 mt-2 max-w-xl text-lg">
-                Voici le rapport de performance et de disponibilité de vos infrastructures.
+                Rapport de performance pour l'organisation active.
             </p>
         </div>
         
-        {/* Résumé rapide */}
         <div className={`hidden md:flex items-center gap-6 text-sm font-medium px-4 py-2 rounded-full border shadow-sm transition-colors
             ${totalIncidents === 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}
         `}>
@@ -100,10 +137,9 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* --- 1. BLOC KPIs (DESIGN AMÉLIORÉ) --- */}
+      {/* KPI CARDS */}
       <div className="grid gap-6 md:grid-cols-3">
         
-        {/* Carte 1 : Sites (Bleu) */}
         <Card className="relative overflow-hidden border-blue-100 bg-gradient-to-br from-white to-blue-50/50 shadow-sm hover:shadow-md transition-all group">
             <CardContent className="p-6">
                 <div className="flex justify-between items-start">
@@ -117,14 +153,12 @@ export default async function DashboardPage() {
                 </div>
                 <div className="mt-4 flex items-center text-sm text-blue-700 font-medium">
                     <span className="bg-blue-100 px-2 py-0.5 rounded text-xs mr-2">Actifs</span>
-                    Projets monitorés en temps réel
+                    Projets monitorés
                 </div>
             </CardContent>
-            {/* Décoration d'arrière plan */}
-            <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-blue-100/50 blur-2xl group-hover:bg-blue-200/50 transition-colors pointer-events-none" />
+            <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-blue-100/50 blur-2xl group-hover:bg-blue-200/50 pointer-events-none" />
         </Card>
 
-        {/* Carte 2 : Sous-pages (Violet) */}
         <Card className="relative overflow-hidden border-purple-100 bg-gradient-to-br from-white to-purple-50/50 shadow-sm hover:shadow-md transition-all group">
             <CardContent className="p-6">
                 <div className="flex justify-between items-start">
@@ -141,10 +175,9 @@ export default async function DashboardPage() {
                     Sous-pages analysées
                 </div>
             </CardContent>
-            <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-purple-100/50 blur-2xl group-hover:bg-purple-200/50 transition-colors pointer-events-none" />
+            <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-purple-100/50 blur-2xl group-hover:bg-purple-200/50 pointer-events-none" />
         </Card>
 
-        {/* Carte 3 : Incidents (Dynamique Rouge/Vert) */}
         <Link href="/alerts" className="block h-full group">
             <Card className={`relative h-full overflow-hidden border shadow-sm hover:shadow-md transition-all
                 ${totalIncidents > 0 
@@ -176,17 +209,16 @@ export default async function DashboardPage() {
                         {totalIncidents > 0 ? (
                             <>
                                 <span className="bg-red-100 px-2 py-0.5 rounded text-xs mr-2 animate-pulse">Attention</span>
-                                Incidents critiques en cours
+                                Incidents critiques
                             </>
                         ) : (
                             <>
                                 <span className="bg-emerald-100 px-2 py-0.5 rounded text-xs mr-2">Stable</span>
-                                Tous les systèmes sont opérationnels
+                                Tous systèmes OK
                             </>
                         )}
                     </div>
                 </CardContent>
-                {/* Glow effect background */}
                 <div className={`absolute -right-6 -bottom-6 h-24 w-24 rounded-full blur-2xl transition-colors pointer-events-none
                     ${totalIncidents > 0 ? 'bg-red-100/50 group-hover:bg-red-200/50' : 'bg-emerald-100/50 group-hover:bg-emerald-200/50'}
                 `} />
@@ -195,7 +227,7 @@ export default async function DashboardPage() {
         
       </div>
 
-      {/* --- 2. STATUTS SYSTÈMES --- */}
+      {/* STATUTS SYSTÈMES */}
       <div className="space-y-6">
         <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Activity className="h-5 w-5 text-gray-400" />
@@ -207,8 +239,6 @@ export default async function DashboardPage() {
              folders.map((folder) => {
                 const status = folderStatusMap[folder.id]
                 const hasAudit = status !== undefined
-                
-                // Logique stricte : Vert uniquement si 200 <= status < 400
                 const isOnline = hasAudit && (status >= 200 && status < 400)
 
                 return (
@@ -267,7 +297,9 @@ export default async function DashboardPage() {
                     <Folder className="h-10 w-10 text-gray-300" />
                 </div>
                 <h3 className="text-lg font-bold text-gray-900">Aucun système monitoré</h3>
-                <p className="text-gray-500 mt-2 max-w-sm">Ajoutez votre premier site pour voir son statut apparaître ici en temps réel.</p>
+                <p className="text-gray-500 mt-2 max-w-sm">
+                    Cette organisation est vide. Ajoutez votre premier site pour commencer.
+                </p>
              </div>
           )}
         </div>

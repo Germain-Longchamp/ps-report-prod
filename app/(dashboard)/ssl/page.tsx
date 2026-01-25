@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import { ShieldCheck } from 'lucide-react'
 import { SSLCertificateList } from '@/components/SSLCertificateList'
+import { cookies } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,10 +21,28 @@ export default async function SSLPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // 2. Data Fetching
+  // --- LOGIQUE MULTI-TENANT ---
+  // A. Récupérer les organisations valides
+  const { data: memberships } = await supabase
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', user.id)
+
+  const validOrgIds = memberships?.map(m => m.organization_id) || []
+
+  // B. Récupérer l'organisation active
+  const cookieStore = await cookies()
+  let activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+
+  if (!activeOrgId || !validOrgIds.includes(activeOrgId)) {
+      activeOrgId = validOrgIds[0]
+  }
+
+  // 2. Data Fetching (FILTRÉ PAR ORG)
   const { data: folders } = await supabase
     .from('folders')
     .select('*, audits(ssl_expiry_date, https_valid, created_at)')
+    .eq('organization_id', activeOrgId) // <--- FILTRE ICI
     .order('created_at', { ascending: false })
 
   // 3. Transformation des données

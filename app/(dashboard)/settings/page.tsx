@@ -13,6 +13,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { User, Key, Save, Building2, Shield, Mail, Lock } from 'lucide-react'
 import { updateProfile, updateOrgSettings } from '@/app/actions'
+import { cookies } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,25 +24,39 @@ export default async function SettingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // 2. Data Fetching
+  // 2. Data Fetching (Profil)
   const { data: profile } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single()
 
-  const { data: member } = await supabase
+  // 3. LOGIQUE MULTI-TENANT (Organisation Active)
+  
+  // A. Récupérer toutes les organisations dont l'utilisateur est membre
+  const { data: memberships } = await supabase
     .from('organization_members')
     .select('organization_id')
     .eq('user_id', user.id)
-    .single()
 
+  const validOrgIds = memberships?.map(m => m.organization_id) || []
+
+  // B. Déterminer l'ID actif via Cookie ou Fallback
+  const cookieStore = await cookies()
+  let activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+
+  // Si pas de cookie ou ID invalide (non membre), on prend la première org trouvée
+  if (!activeOrgId || !validOrgIds.includes(activeOrgId)) {
+      activeOrgId = validOrgIds[0]
+  }
+
+  // C. Récupérer les détails de l'organisation active
   let org = null
-  if (member) {
+  if (activeOrgId) {
     const { data: orgData } = await supabase
         .from('organizations')
         .select('*')
-        .eq('id', member.organization_id)
+        .eq('id', activeOrgId)
         .single()
     org = orgData
   }
@@ -179,7 +194,9 @@ export default async function SettingsPage() {
                   
                   {org ? (
                       <form action={updateOrgSettings}>
+                          {/* IMPORTANT : On passe l'ID de l'org active */}
                           <input type="hidden" name="orgId" value={org.id} />
+                          
                           <CardContent className="space-y-8 pt-8">
                               
                               {/* 1. NOM DE L'ORGANISATION (Lecture seule) */}
@@ -191,7 +208,6 @@ export default async function SettingsPage() {
                                           disabled 
                                           className="bg-gray-50 border-gray-200 text-gray-600 font-medium cursor-default"
                                       />
-                                      {/* Badge "PRO" ou "FREE" décoratif */}
                                       <div className="absolute right-3 top-2.5">
                                          <span className="px-2 py-0.5 bg-black text-white text-[10px] rounded-full font-bold tracking-wider">PRO</span>
                                       </div>
