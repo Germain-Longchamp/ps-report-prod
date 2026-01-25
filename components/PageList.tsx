@@ -21,7 +21,8 @@ import {
   Plus,
   CornerDownRight,
   Layers,
-  AlertCircle
+  AlertCircle,
+  FileQuestion // Nouvelle icône pour l'état vide
 } from 'lucide-react'
 import { deletePage, runPageSpeedAudit, getAuditDetails, createPage } from '@/app/actions'
 import { toast } from "sonner"
@@ -252,7 +253,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                 Suivre une nouvelle page
              </div>
 
-             {/* STATS RAPIDES (Total & Erreurs) */}
              <div className="flex items-center gap-2">
                  <Badge variant="secondary" className="bg-gray-100 text-gray-600 hover:bg-gray-200 gap-1.5 font-mono text-xs">
                      <Layers className="h-3 w-3" />
@@ -271,7 +271,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
          <form onSubmit={handleAddPage} className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
              <div className="w-full md:w-1/3 relative">
                 <Input 
-                    placeholder="Nom" 
+                    placeholder="Nom (ex: Page Contact)" 
                     className="bg-gray-50 border-gray-200 focus:bg-white transition-all pl-3"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
@@ -279,7 +279,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
              </div>
              <div className="w-full md:flex-1 relative">
                 <Input 
-                    placeholder="URL" 
+                    placeholder="URL (ex: /contact)" 
                     className="bg-gray-50 border-gray-200 focus:bg-white transition-all pl-3"
                     value={newUrl}
                     onChange={(e) => setNewUrl(e.target.value)}
@@ -302,7 +302,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
             <input 
                 type="text" 
-                placeholder="Filtrer..." 
+                placeholder="Chercher..." // CHANGEMENT 1 : Placeholder
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-black transition-all"
@@ -330,6 +330,20 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
 
       {/* 3. LISTE DES RÉSULTATS */}
       <div className="space-y-3">
+        
+        {/* CHANGEMENT 2 : État vide avec icône et texte */}
+        {filteredPages.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 bg-white border border-dashed border-gray-200 rounded-xl text-center">
+                <div className="h-12 w-12 bg-gray-50 rounded-full flex items-center justify-center mb-3">
+                    <FileQuestion className="h-6 w-6 text-gray-400" />
+                </div>
+                <h3 className="text-sm font-semibold text-gray-900">Aucune page trouvée</h3>
+                <p className="text-xs text-gray-500 mt-1 max-w-xs mx-auto">
+                    {search ? "Essayez de modifier votre recherche." : "Commencez par ajouter une URL ci-dessus."}
+                </p>
+            </div>
+        )}
+
         {filteredPages.map((page: Page) => {
             if (page.isOptimistic) {
                 return (
@@ -357,13 +371,19 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                 <div key={page.id} className={cn(
                     "group rounded-xl border shadow-sm hover:shadow-md transition-all p-4 flex flex-col md:flex-row md:items-center gap-6",
                     isError 
-                        ? "bg-red-50/40 border-red-200 hover:border-red-300 hover:bg-red-50" // Style ERREUR (Liseré rouge)
+                        ? "bg-red-50/40 border-red-200 hover:border-red-300 hover:bg-red-50" // Style ERREUR
                         : "bg-white border-gray-200 hover:border-gray-300" // Style NORMAL
                 )}>
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-bold text-gray-900 truncate">{page.name}</h3>
-                            {isError && <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">Erreur {lastAudit!.status_code}</Badge>}
+                            
+                            {/* CHANGEMENT 3 : Pastille blanche pour l'erreur */}
+                            {isError && (
+                                <Badge variant="outline" className="bg-white text-red-600 border-red-200 hover:bg-red-50 h-5 px-1.5 text-[10px] ml-1 shadow-sm font-mono">
+                                    Erreur {lastAudit!.status_code}
+                                </Badge>
+                            )}
                         </div>
                         <a href={page.url} target="_blank" className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 truncate transition-colors">
                             {page.url} <ExternalLink className="h-3 w-3" />
@@ -372,6 +392,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
 
                     {hasAudit && !isError ? (
                         <div className="flex items-center gap-2 md:gap-6 shrink-0 overflow-x-auto pb-2 md:pb-0">
+                            {/* ... Scores inchangés ... */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Monitor className="h-3 w-3" /> Desk</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_desktop_score)}`}>{lastAudit!.performance_desktop_score ?? '-'}</div>
@@ -425,6 +446,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
       </div>
     </div>
 
+    {/* SIDE PANEL & DIALOG (Inchangés) */}
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent className="w-full sm:max-w-xl md:max-w-2xl overflow-y-auto p-0 bg-white">
             <SheetHeader className="p-6 pb-2 border-b border-gray-100">

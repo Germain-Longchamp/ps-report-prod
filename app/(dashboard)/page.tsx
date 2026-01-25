@@ -1,8 +1,8 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Folder, FileText, AlertOctagon, Activity, Globe, Calendar } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Folder, FileText, AlertOctagon, Activity, Globe, Calendar, CheckCircle2, Server, Layers } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 export const dynamic = 'force-dynamic'
@@ -20,14 +20,12 @@ export default async function DashboardPage() {
   const hour = now.getHours()
   const greeting = hour >= 18 ? 'Bonsoir' : 'Bonjour'
 
-  // 2. RÉCUPÉRATION DES DONNÉES (Folders + Pages + Audits associés)
+  // 2. RÉCUPÉRATION DES DONNÉES
   const [foldersRes, pagesRes, profileRes] = await Promise.all([
-    // On récupère les dossiers et leurs audits pour vérifier la racine
     supabase.from('folders')
       .select('*, audits(id, status_code, created_at)')
       .order('created_at', { ascending: false }),
     
-    // On récupère les pages et leurs audits pour vérifier les sous-pages
     supabase.from('pages')
       .select('*, audits(id, status_code, created_at)'),
 
@@ -37,27 +35,21 @@ export default async function DashboardPage() {
   const folders = foldersRes.data || []
   const pages = pagesRes.data || []
   
-  // Nom d'affichage
   const profile = profileRes.data
   const userName = profile?.first_name || user.email?.split('@')[0] || 'Utilisateur'
 
-  // --- 3. CALCUL DES INCIDENTS (Racines + Sous-pages) ---
+  // --- 3. CALCUL DES INCIDENTS ---
   let totalIncidents = 0
 
-  // Fonction helper pour vérifier si un tableau d'audits contient une erreur récente
   const hasError = (audits: any[]) => {
       if (!audits || audits.length === 0) return false
-      // Tri du plus récent au plus ancien
       const last = audits.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
-      // Erreur si status 0 (Crash/DNS) ou >= 400 (HTTP Error)
       return last.status_code === 0 || last.status_code >= 400
   }
 
-  // A. Vérification des Racines (Folders)
+  // A. Racines
   const folderStatusMap: Record<string, number> = {}
-  
   folders.forEach(folder => {
-      // Calcul du statut pour l'affichage plus bas
       const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
       if (lastAudit) {
           folderStatusMap[folder.id] = lastAudit.status_code
@@ -65,7 +57,7 @@ export default async function DashboardPage() {
       }
   })
 
-  // B. Vérification des Sous-pages (Pages)
+  // B. Sous-pages
   pages.forEach(page => {
       if (hasError(page.audits)) {
           totalIncidents++
@@ -90,70 +82,114 @@ export default async function DashboardPage() {
             </p>
         </div>
         
-        {/* Résumé rapide (En haut à droite) */}
-        <div className={`hidden md:flex items-center gap-6 text-sm font-medium px-4 py-2 rounded-full border 
+        {/* Résumé rapide */}
+        <div className={`hidden md:flex items-center gap-6 text-sm font-medium px-4 py-2 rounded-full border shadow-sm transition-colors
             ${totalIncidents === 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}
         `}>
             {totalIncidents === 0 ? (
                 <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                     Systèmes opérationnels
                 </div>
             ) : (
                 <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                    <AlertOctagon className="h-4 w-4 text-red-600" />
                     {totalIncidents} incident(s) détecté(s)
                 </div>
             )}
         </div>
       </div>
 
-      {/* --- 1. BLOC KPIs --- */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* --- 1. BLOC KPIs (DESIGN AMÉLIORÉ) --- */}
+      <div className="grid gap-6 md:grid-cols-3">
         
-        {/* Carte 1 : Sites */}
-        <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Sites suivis</CardTitle>
-                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Folder className="h-4 w-4" /></div>
-            </CardHeader>
-            <CardContent>
-                <div className="text-3xl font-bold text-gray-900">{folders.length}</div>
-                <p className="text-xs text-gray-500 mt-1">Projets actifs</p>
+        {/* Carte 1 : Sites (Bleu) */}
+        <Card className="relative overflow-hidden border-blue-100 bg-gradient-to-br from-white to-blue-50/50 shadow-sm hover:shadow-md transition-all group">
+            <CardContent className="p-6">
+                <div className="flex justify-between items-start">
+                    <div>
+                        <p className="text-sm font-semibold text-blue-900/60 uppercase tracking-wider mb-1">Sites Suivis</p>
+                        <div className="text-4xl font-extrabold text-blue-950">{folders.length}</div>
+                    </div>
+                    <div className="h-12 w-12 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-200 group-hover:scale-110 transition-transform">
+                        <Server className="h-6 w-6" />
+                    </div>
+                </div>
+                <div className="mt-4 flex items-center text-sm text-blue-700 font-medium">
+                    <span className="bg-blue-100 px-2 py-0.5 rounded text-xs mr-2">Actifs</span>
+                    Projets monitorés en temps réel
+                </div>
             </CardContent>
+            {/* Décoration d'arrière plan */}
+            <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-blue-100/50 blur-2xl group-hover:bg-blue-200/50 transition-colors pointer-events-none" />
         </Card>
 
-        {/* Carte 2 : Sous-pages */}
-        <Card className="border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-gray-500 uppercase tracking-wider">Sous-pages</CardTitle>
-                <div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><FileText className="h-4 w-4" /></div>
-            </CardHeader>
-            <CardContent>
-                <div className="text-3xl font-bold text-gray-900">{pages.length}</div>
-                <p className="text-xs text-gray-500 mt-1">URLs surveillées</p>
+        {/* Carte 2 : Sous-pages (Violet) */}
+        <Card className="relative overflow-hidden border-purple-100 bg-gradient-to-br from-white to-purple-50/50 shadow-sm hover:shadow-md transition-all group">
+            <CardContent className="p-6">
+                <div className="flex justify-between items-start">
+                    <div>
+                        <p className="text-sm font-semibold text-purple-900/60 uppercase tracking-wider mb-1">Total URLs</p>
+                        <div className="text-4xl font-extrabold text-purple-950">{pages.length}</div>
+                    </div>
+                    <div className="h-12 w-12 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-lg shadow-purple-200 group-hover:scale-110 transition-transform">
+                        <Layers className="h-6 w-6" />
+                    </div>
+                </div>
+                <div className="mt-4 flex items-center text-sm text-purple-700 font-medium">
+                    <span className="bg-purple-100 px-2 py-0.5 rounded text-xs mr-2">Profondeur</span>
+                    Sous-pages analysées
+                </div>
             </CardContent>
+            <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-purple-100/50 blur-2xl group-hover:bg-purple-200/50 transition-colors pointer-events-none" />
         </Card>
 
-        {/* Carte 3 : Incidents (CLIQUABLE) */}
-        <Link href="/alerts" className="block h-full">
-            <Card className={`h-full border shadow-sm transition-all cursor-pointer ${totalIncidents > 0 ? 'bg-red-50 border-red-200 hover:border-red-400' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-md'}`}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className={`text-sm font-medium uppercase tracking-wider ${totalIncidents > 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                        Incidents
-                    </CardTitle>
-                    <div className={`p-2 rounded-lg ${totalIncidents > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                        {totalIncidents > 0 ? <AlertOctagon className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+        {/* Carte 3 : Incidents (Dynamique Rouge/Vert) */}
+        <Link href="/alerts" className="block h-full group">
+            <Card className={`relative h-full overflow-hidden border shadow-sm hover:shadow-md transition-all
+                ${totalIncidents > 0 
+                    ? 'border-red-100 bg-gradient-to-br from-white to-red-50/50' 
+                    : 'border-emerald-100 bg-gradient-to-br from-white to-emerald-50/50'
+                }
+            `}>
+                <CardContent className="p-6">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className={`text-sm font-semibold uppercase tracking-wider mb-1 ${totalIncidents > 0 ? 'text-red-900/60' : 'text-emerald-900/60'}`}>
+                                État de santé
+                            </p>
+                            <div className={`text-4xl font-extrabold ${totalIncidents > 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                                {totalIncidents > 0 ? totalIncidents : "100%"}
+                            </div>
+                        </div>
+                        <div className={`h-12 w-12 rounded-xl text-white flex items-center justify-center shadow-lg transition-transform group-hover:scale-110
+                             ${totalIncidents > 0 
+                                ? 'bg-red-500 shadow-red-200' 
+                                : 'bg-emerald-500 shadow-emerald-200'
+                             }
+                        `}>
+                            {totalIncidents > 0 ? <AlertOctagon className="h-6 w-6" /> : <Activity className="h-6 w-6" />}
+                        </div>
                     </div>
-                </CardHeader>
-                <CardContent>
-                    <div className={`text-3xl font-bold ${totalIncidents > 0 ? 'text-red-700' : 'text-gray-900'}`}>
-                        {totalIncidents}
+                    
+                    <div className={`mt-4 flex items-center text-sm font-medium ${totalIncidents > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                        {totalIncidents > 0 ? (
+                            <>
+                                <span className="bg-red-100 px-2 py-0.5 rounded text-xs mr-2 animate-pulse">Attention</span>
+                                Incidents critiques en cours
+                            </>
+                        ) : (
+                            <>
+                                <span className="bg-emerald-100 px-2 py-0.5 rounded text-xs mr-2">Stable</span>
+                                Tous les systèmes sont opérationnels
+                            </>
+                        )}
                     </div>
-                    <p className={`text-xs mt-1 ${totalIncidents > 0 ? 'text-red-600/80 font-medium' : 'text-gray-500'}`}>
-                        {totalIncidents > 0 ? "Erreurs critiques détectées" : "Tout est opérationnel"}
-                    </p>
                 </CardContent>
+                {/* Glow effect background */}
+                <div className={`absolute -right-6 -bottom-6 h-24 w-24 rounded-full blur-2xl transition-colors pointer-events-none
+                    ${totalIncidents > 0 ? 'bg-red-100/50 group-hover:bg-red-200/50' : 'bg-emerald-100/50 group-hover:bg-emerald-200/50'}
+                `} />
             </Card>
         </Link>
         
@@ -208,7 +244,7 @@ export default async function DashboardPage() {
                                         {folder.root_url}
                                     </div>
 
-                                    <div className={`text-[10px] font-medium mt-3 
+                                    <div className={`text-[10px] font-medium mt-3 flex items-center gap-1
                                         ${hasAudit 
                                             ? (isOnline ? 'text-emerald-600' : 'text-red-600') 
                                             : 'text-gray-400'
