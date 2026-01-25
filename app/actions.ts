@@ -71,26 +71,37 @@ export async function createFolder(formData: FormData) {
   return { success: true, id: data.id }
 }
 
+
 export async function updateFolder(formData: FormData) {
   const supabase = await createClient()
   
   const folderId = formData.get('folderId') as string
   const name = formData.get('name') as string
-  const rootUrl = formData.get('rootUrl') as string
+  const rawUrl = formData.get('rootUrl') as string
 
-  if (!folderId || !name || !rootUrl) return { error: "Données incomplètes" }
+  if (!folderId || !name || !rawUrl) return { error: "Données incomplètes" }
+
+  // --- PETITE SÉCURITÉ AJOUTÉE ---
+  // On ajoute https si manquant et on retire le slash final
+  let cleanUrl = rawUrl.trim()
+  if (!cleanUrl.startsWith('http')) {
+    cleanUrl = `https://${cleanUrl}`
+  }
+  cleanUrl = cleanUrl.replace(/\/$/, '')
+  // -------------------------------
 
   const { error } = await supabase
     .from('folders')
     .update({ 
         name, 
-        root_url: rootUrl 
+        root_url: cleanUrl // On utilise l'URL nettoyée
     })
     .eq('id', folderId)
 
   if (error) return { error: "Erreur lors de la mise à jour." }
 
   revalidatePath(`/site/${folderId}`)
+  revalidatePath('/') // Important pour le dashboard
   return { success: "Site mis à jour avec succès." }
 }
 

@@ -19,7 +19,9 @@ import {
   AlertTriangle,
   ArrowUpNarrowWide,
   Plus,
-  CornerDownRight
+  CornerDownRight,
+  Layers,
+  AlertCircle
 } from 'lucide-react'
 import { deletePage, runPageSpeedAudit, getAuditDetails, createPage } from '@/app/actions'
 import { toast } from "sonner"
@@ -112,10 +114,17 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
   const [isLoadingReport, setIsLoadingReport] = useState(false)
   const [pageToDelete, setPageToDelete] = useState<string | null>(null)
 
-  // --- INPUTS AJOUT RAPIDE ---
+  // Inputs Ajout
   const [newUrl, setNewUrl] = useState('')
   const [newName, setNewName] = useState('') 
   const [isAddingPage, setIsAddingPage] = useState(false)
+
+  // --- STATS CALCULÉES ---
+  const totalPages = pages.length
+  const errorPages = pages.filter(p => {
+      const lastAudit = getLastAuditSafe(p.audits)
+      return lastAudit && lastAudit.status_code >= 400
+  }).length
 
   // --- ACTIONS ---
 
@@ -123,7 +132,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
     e.preventDefault()
     if (!newUrl) return
 
-    // 1. Validation & Formatage URL
     let finalUrl = newUrl.trim()
     if (!finalUrl.startsWith('http')) {
         if (finalUrl.startsWith('/')) {
@@ -134,11 +142,9 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
     }
 
     const displayName = newName.trim() || finalUrl
-
     setIsAddingPage(true)
     const tempId = `temp-${Date.now()}`
 
-    // 2. OPTIMISTIC UI
     const optimisticPage: Page = {
         id: tempId,
         name: displayName, 
@@ -149,8 +155,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
     }
 
     setPages((prev) => [optimisticPage, ...prev])
-    
-    // Reset inputs
     setNewUrl('') 
     setNewName('')
 
@@ -161,7 +165,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
         formData.append('name', displayName)
 
         await createPage(formData)
-
         router.refresh() 
         toast.success("Page ajoutée et analysée !")
     } catch (error) {
@@ -241,16 +244,31 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
       
       {/* 1. ZONE D'AJOUT RAPIDE */}
       <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-3">
-         <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <div className="p-1 bg-black text-white rounded">
-                <Plus className="h-3.5 w-3.5" />
-            </div>
-            Suivre une nouvelle page
+         <div className="flex items-center justify-between">
+             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                <div className="p-1 bg-black text-white rounded">
+                    <Plus className="h-3.5 w-3.5" />
+                </div>
+                Suivre une nouvelle page
+             </div>
+
+             {/* STATS RAPIDES (Total & Erreurs) */}
+             <div className="flex items-center gap-2">
+                 <Badge variant="secondary" className="bg-gray-100 text-gray-600 hover:bg-gray-200 gap-1.5 font-mono text-xs">
+                     <Layers className="h-3 w-3" />
+                     {totalPages} Pages
+                 </Badge>
+                 
+                 {errorPages > 0 && (
+                     <Badge variant="destructive" className="bg-red-50 text-red-600 border-red-200 hover:bg-red-100 gap-1.5 font-mono text-xs">
+                         <AlertCircle className="h-3 w-3" />
+                         {errorPages} Erreur{errorPages > 1 ? 's' : ''}
+                     </Badge>
+                 )}
+             </div>
          </div>
          
          <form onSubmit={handleAddPage} className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
-             
-             {/* Champ NOM (Placeholder épuré) */}
              <div className="w-full md:w-1/3 relative">
                 <Input 
                     placeholder="Nom" 
@@ -259,8 +277,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                     onChange={(e) => setNewName(e.target.value)}
                 />
              </div>
-
-             {/* Champ URL (Placeholder épuré) */}
              <div className="w-full md:flex-1 relative">
                 <Input 
                     placeholder="URL" 
@@ -269,7 +285,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                     onChange={(e) => setNewUrl(e.target.value)}
                 />
              </div>
-
              <Button 
                 type="submit" 
                 disabled={!newUrl || isAddingPage} 
@@ -296,58 +311,18 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
 
         <div className="flex items-center gap-3 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0 no-scrollbar">
             <span className="text-sm text-gray-500 whitespace-nowrap hidden xl:block font-medium">Trier par :</span>
-            
             <div className="flex gap-2">
-                <button
-                    onClick={() => setSortBy('date')}
-                    className={cn(
-                        "flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border",
-                        sortBy === 'date' 
-                            ? "bg-black text-white border-black shadow-sm" 
-                            : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                    )}
-                >
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    Récents
+                <button onClick={() => setSortBy('date')} className={cn("flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border", sortBy === 'date' ? "bg-black text-white border-black shadow-sm" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50")}>
+                    <CalendarDays className="h-3.5 w-3.5" /> Récents
                 </button>
-                <button
-                    onClick={() => setSortBy('mobile')}
-                    className={cn(
-                        "flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border",
-                        sortBy === 'mobile' 
-                            ? "bg-blue-600 text-white border-blue-600 shadow-sm" 
-                            : "bg-white text-gray-600 border-gray-200 hover:border-blue-200 hover:text-blue-600"
-                    )}
-                >
-                    <Smartphone className="h-3.5 w-3.5" />
-                    Mobile
-                    {sortBy === 'mobile' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
+                <button onClick={() => setSortBy('mobile')} className={cn("flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border", sortBy === 'mobile' ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-gray-600 border-gray-200 hover:border-blue-200 hover:text-blue-600")}>
+                    <Smartphone className="h-3.5 w-3.5" /> Mobile {sortBy === 'mobile' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
                 </button>
-                <button
-                    onClick={() => setSortBy('desktop')}
-                    className={cn(
-                        "flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border",
-                        sortBy === 'desktop' 
-                            ? "bg-slate-700 text-white border-slate-700 shadow-sm" 
-                            : "bg-white text-gray-600 border-gray-200 hover:border-slate-300 hover:text-slate-800"
-                    )}
-                >
-                    <Monitor className="h-3.5 w-3.5" />
-                    Desktop
-                    {sortBy === 'desktop' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
+                <button onClick={() => setSortBy('desktop')} className={cn("flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border", sortBy === 'desktop' ? "bg-slate-700 text-white border-slate-700 shadow-sm" : "bg-white text-gray-600 border-gray-200 hover:border-slate-300 hover:text-slate-800")}>
+                    <Monitor className="h-3.5 w-3.5" /> Desktop {sortBy === 'desktop' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
                 </button>
-                <button
-                    onClick={() => setSortBy('seo')}
-                    className={cn(
-                        "flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border",
-                        sortBy === 'seo' 
-                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" 
-                            : "bg-white text-gray-600 border-gray-200 hover:border-emerald-200 hover:text-emerald-600"
-                    )}
-                >
-                    <SearchIcon className="h-3.5 w-3.5" />
-                    SEO
-                    {sortBy === 'seo' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
+                <button onClick={() => setSortBy('seo')} className={cn("flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-all border", sortBy === 'seo' ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" : "bg-white text-gray-600 border-gray-200 hover:border-emerald-200 hover:text-emerald-600")}>
+                    <SearchIcon className="h-3.5 w-3.5" /> SEO {sortBy === 'seo' && <ArrowUpNarrowWide className="h-3 w-3 ml-1 opacity-70"/>}
                 </button>
             </div>
         </div>
@@ -356,7 +331,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
       {/* 3. LISTE DES RÉSULTATS */}
       <div className="space-y-3">
         {filteredPages.map((page: Page) => {
-            // Rendu Optimiste
             if (page.isOptimistic) {
                 return (
                     <div key={page.id} className="bg-blue-50/50 rounded-xl border border-blue-100 p-4 flex items-center gap-6 animate-pulse">
@@ -374,16 +348,18 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                 )
             }
 
-            // Rendu Standard
             const lastAudit = getLastAuditSafe(page.audits)
             const hasAudit = !!lastAudit
             const isError = hasAudit && lastAudit!.status_code >= 400
             const isRunning = runningAuditId === page.id
 
             return (
-                <div key={page.id} className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all p-4 flex flex-col md:flex-row md:items-center gap-6">
-                    
-                    {/* Infos Page */}
+                <div key={page.id} className={cn(
+                    "group rounded-xl border shadow-sm hover:shadow-md transition-all p-4 flex flex-col md:flex-row md:items-center gap-6",
+                    isError 
+                        ? "bg-red-50/40 border-red-200 hover:border-red-300 hover:bg-red-50" // Style ERREUR (Liseré rouge)
+                        : "bg-white border-gray-200 hover:border-gray-300" // Style NORMAL
+                )}>
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-bold text-gray-900 truncate">{page.name}</h3>
@@ -394,44 +370,28 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                         </a>
                     </div>
 
-                    {/* Scores & KPIs */}
                     {hasAudit && !isError ? (
                         <div className="flex items-center gap-2 md:gap-6 shrink-0 overflow-x-auto pb-2 md:pb-0">
-                            
-                            {/* Desktop */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Monitor className="h-3 w-3" /> Desk</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_desktop_score)}`}>{lastAudit!.performance_desktop_score ?? '-'}</div>
                             </div>
-                            
-                            {/* Mobile */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Smartphone className="h-3 w-3" /> Mob</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_score)}`}>{lastAudit!.performance_score ?? '-'}</div>
                             </div>
-
-                            {/* SEO */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><SearchIcon className="h-3 w-3" /> SEO</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.seo_score)}`}>{lastAudit!.seo_score ?? '-'}</div>
                             </div>
-
-                            {/* Accessibilité */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Accessibility className="h-3 w-3" /> Access</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.accessibility_score)}`}>{lastAudit!.accessibility_score ?? '-'}</div>
                             </div>
-
-                            {/* TTFB */}
                             <div className="flex flex-col items-center min-w-[60px] border-l border-gray-100 pl-4 ml-2">
-                                <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1">
-                                    <Timer className="h-3 w-3" /> TTFB
-                                </span>
-                                <div className={`text-sm font-bold ${getTtfbColor(lastAudit!.ttfb)}`}>
-                                    {lastAudit!.ttfb ? `${lastAudit!.ttfb}ms` : '-'}
-                                </div>
+                                <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Timer className="h-3 w-3" /> TTFB</span>
+                                <div className={`text-sm font-bold ${getTtfbColor(lastAudit!.ttfb)}`}>{lastAudit!.ttfb ? `${lastAudit!.ttfb}ms` : '-'}</div>
                             </div>
-
                         </div>
                     ) : (
                         <div className="shrink-0 text-sm text-gray-400 italic px-4">
@@ -439,37 +399,18 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                         </div>
                     )}
 
-                    {/* Actions Rapides */}
                     <div className="shrink-0 flex items-center gap-2 pl-2 md:border-l md:border-gray-100 md:pl-4">
-                        
-                        <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 text-gray-400 hover:text-black hover:bg-gray-100"
-                            onClick={() => handleRunAudit(page.url, page.id)}
-                            disabled={isRunning}
-                            title="Relancer l'audit"
-                        >
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-black hover:bg-gray-100" onClick={() => handleRunAudit(page.url, page.id)} disabled={isRunning} title="Relancer l'audit">
                             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                         </Button>
-
                         {hasAudit && !isError && (
-                             <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="h-8 text-blue-600 border-blue-200 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-300"
-                                onClick={() => handleViewReport(lastAudit!.id)}
-                            >
-                                <FileText className="h-3.5 w-3.5 mr-2" />
-                                Rapport
+                             <Button variant="outline" size="sm" className="h-8 text-blue-600 border-blue-200 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-300" onClick={() => handleViewReport(lastAudit!.id)}>
+                                <FileText className="h-3.5 w-3.5 mr-2" /> Rapport
                             </Button>
                         )}
-
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-black">
-                                    <MoreVertical className="h-4 w-4" />
-                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-black"><MoreVertical className="h-4 w-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="bg-white">
                                 <DropdownMenuItem onClick={() => setPageToDelete(page.id)} className="text-red-600 cursor-pointer focus:text-red-600">
@@ -478,14 +419,12 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </div>
-
                 </div>
             )
         })}
       </div>
     </div>
 
-    {/* SIDE PANEL & DIALOG (Inchangés) */}
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent className="w-full sm:max-w-xl md:max-w-2xl overflow-y-auto p-0 bg-white">
             <SheetHeader className="p-6 pb-2 border-b border-gray-100">

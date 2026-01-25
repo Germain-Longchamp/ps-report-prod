@@ -55,13 +55,15 @@ export function SiteSettingsDialog({ folder }: { folder: any }) {
     setIsLoading(true)
     
     const formData = new FormData()
-    formData.append('id', folder.id)
+    // CORRECTION ICI : On utilise les noms que votre actions.ts attend
+    formData.append('folderId', folder.id) // C'était 'id', ça devient 'folderId'
     formData.append('name', name)
-    formData.append('root_url', url)
+    formData.append('rootUrl', url)        // C'était 'root_url', ça devient 'rootUrl'
 
     const res = await updateFolder(formData)
     
     setIsLoading(false)
+    // Note: votre action renvoie { success: string } ou { error: string }
     if (res?.error) {
         toast.error(res.error)
     } else {
