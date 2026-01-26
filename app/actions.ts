@@ -50,26 +50,32 @@ async function _getActiveOrgAndMember(supabase: any, userId: string) {
 export async function createOrganization(formData: FormData) {
   const supabase = await createClient()
   
-  // On récupère juste le nom, l'auth est gérée automatiquement par Supabase/Postgres
   const orgName = formData.get('orgName') as string
   if (!orgName) return { error: "Nom requis" }
 
-  // Appel de la fonction RPC créée à l'instant
   const { data: newOrgId, error } = await supabase.rpc('create_org_with_owner', { 
     org_name: orgName 
   })
 
   if (error) {
     console.error('Erreur Create Org:', error)
-    return { error: 'Impossible de créer l\'organisation (Erreur SQL).' }
+    return { error: 'Impossible de créer l\'organisation.' }
   }
 
-  // On switch immédiatement sur la nouvelle organisation
+  // MODIFICATION ICI : On définit le cookie, mais on ne redirige PAS.
+  // On renvoie le succès au client pour qu'il ferme la modale proprement.
   if (newOrgId) {
-      await switchOrganization(newOrgId.toString())
+    const cookieStore = await cookies()
+    cookieStore.set('active_org_id', newOrgId.toString(), {
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 30
+    })
   }
   
-  return { success: true }
+  return { success: true } 
 }
 
 export async function switchOrganization(orgId: string) {
