@@ -6,24 +6,43 @@ import { revalidatePath } from 'next/cache'
 import { cookies } from 'next/headers'
 import https from 'https'
 
-// --- UTILITAIRE : Récupérer l'ID Org Actif et vérifier les droits ---
+// --- UTILITAIRE : Récupérer l'ID Org Actif (Avec Fallback intelligent) ---
 async function _getActiveOrgAndMember(supabase: any, userId: string) {
   const cookieStore = await cookies()
-  const activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+  let activeOrgId = Number(cookieStore.get('active_org_id')?.value)
 
-  if (!activeOrgId) return { error: "Aucune organisation active." }
+  // Cas 1 : On a un cookie, on vérifie qu'il est toujours valide
+  if (activeOrgId) {
+    const { data: member } = await supabase
+      .from('organization_members')
+      .select('organization_id, role')
+      .eq('user_id', userId)
+      .eq('organization_id', activeOrgId)
+      .single()
 
-  // Vérifier membership
-  const { data: member } = await supabase
+    // Si le membre existe bien pour cet ID, c'est gagné
+    if (member) return { activeOrgId, member }
+  }
+
+  // Cas 2 : Pas de cookie OU le cookie est invalide (ex: on a été viré de l'orga)
+  // => On lance le PLAN B : Chercher la première organisation dispo en base
+  const { data: fallbackMember } = await supabase
     .from('organization_members')
     .select('organization_id, role')
     .eq('user_id', userId)
-    .eq('organization_id', activeOrgId)
+    .limit(1)
     .single()
 
-  if (!member) return { error: "Accès refusé à cette organisation." }
+  if (fallbackMember) {
+    // On a trouvé une orga de secours (celle créée à l'inscription par ex)
+    return { 
+        activeOrgId: fallbackMember.organization_id, 
+        member: fallbackMember 
+    }
+  }
 
-  return { activeOrgId, member }
+  // Cas 3 : Vraiment aucune organisation trouvée
+  return { error: "Accès refusé. Vous n'êtes membre d'aucune organisation." }
 }
 
 // --- 1. GESTION ORGANISATION ---
