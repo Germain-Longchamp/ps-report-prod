@@ -205,7 +205,7 @@ export default async function SettingsPage() {
                             </div>
                         </CardHeader>
                         
-                        <CardContent className="pt-6 space-y-6">
+                        <CardContent className="space-y-6">
 
                             {/* Formulaire d'invitation */}
                             <div>
