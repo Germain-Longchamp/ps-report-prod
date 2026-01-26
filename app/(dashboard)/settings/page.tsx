@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { InviteMemberForm } from '@/components/InviteMemberForm'
 import { RemoveMemberButton } from '@/components/RemoveMemberButton'
+import { DeleteOrgButton } from '@/components/DeleteOrgButton' // <--- IMPORT
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { 
   Tabs, 
@@ -14,10 +15,10 @@ import {
 } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { 
-    User, Key, Save, Building2, Shield, Mail, Lock, 
-    Users, Plus, Trash2, Crown 
+    User, Key, Save, Building2, Mail, 
+    Users, Crown, AlertOctagon 
 } from 'lucide-react'
-import { updateProfile, updateOrgSettings, inviteMember, removeMember } from '@/app/actions'
+import { updateProfile, updateOrgSettings } from '@/app/actions'
 import { cookies } from 'next/headers'
 import { Badge } from '@/components/ui/badge'
 
@@ -55,6 +56,7 @@ export default async function SettingsPage() {
   // 4. Récupérer Org + Membres
   let org = null
   let members: any[] = []
+  let currentUserRole = 'member' // Par défaut
   
   if (activeOrgId) {
     const { data: orgData } = await supabase
@@ -64,16 +66,18 @@ export default async function SettingsPage() {
         .single()
     org = orgData
 
-    // Récupération des membres avec leurs profils
     const { data: membersData } = await supabase
         .from('organization_members')
         .select('*, profiles(first_name, last_name, email)')
         .eq('organization_id', activeOrgId)
     
     members = membersData || []
+
+    // Trouver le rôle de l'utilisateur connecté
+    const currentMember = members.find((m: any) => m.user_id === user.id)
+    if (currentMember) currentUserRole = currentMember.role
   }
 
-  // Initials helper
   const firstInitial = profile?.first_name ? profile.first_name[0].toUpperCase() : (user.email?.[0].toUpperCase() || 'U')
   const lastInitial = profile?.last_name ? profile.last_name[0].toUpperCase() : ''
 
@@ -111,7 +115,7 @@ export default async function SettingsPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* --- ONGLET 1 : PROFIL (Inchangé) --- */}
+          {/* --- ONGLET 1 : PROFIL --- */}
           <TabsContent value="profile" className="space-y-6 animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
               <div className="grid gap-6 md:grid-cols-[250px_1fr]">
                   {/* Sidebar visuelle */}
@@ -182,7 +186,7 @@ export default async function SettingsPage() {
               </div>
           </TabsContent>
 
-          {/* --- ONGLET 2 : ORGANISATION (Mis à jour) --- */}
+          {/* --- ONGLET 2 : ORGANISATION --- */}
           <TabsContent value="organization" className="space-y-6 animate-in fade-in-50 slide-in-from-bottom-2 duration-500">
               
               {org ? (
@@ -205,16 +209,14 @@ export default async function SettingsPage() {
                             </div>
                         </CardHeader>
                         
-                        <CardContent className="space-y-6">
-
-                            {/* Formulaire d'invitation */}
+                        <CardContent className="space-y-6 pt-6">
+                            {/* Formulaire d'invitation (visible seulement si admin idéalement, mais ok ici) */}
                             <div>
                                 <InviteMemberForm />   
                             </div>
 
                             <Separator className="bg-gray-100" />
                             
-                            {/* Liste des membres */}
                             <div className="space-y-4">
                                 {members.map((member) => (
                                     <div key={member.id} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50/50">
@@ -242,19 +244,18 @@ export default async function SettingsPage() {
                                                 </Badge>
                                             )}
 
-                                            {/* Bouton Supprimer (Sauf pour soi-même) */}
-                                            {member.user_id !== user.id && (
+                                            {/* Bouton pour retirer (ne pas se retirer soi-même ici) */}
+                                            {member.user_id !== user.id && currentUserRole === 'owner' && (
                                                 <RemoveMemberButton userId={member.user_id} />
                                             )}
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                        
                         </CardContent>
                     </Card>
 
-                    {/* SECTION 2 : CONFIGURATION API (Inchangée mais réintégrée) */}
+                    {/* SECTION 2 : CONFIGURATION API */}
                     <Card className="border-gray-200 shadow-sm overflow-hidden bg-white">
                         <CardHeader className="border-b border-gray-100 pb-6">
                             <div className="flex items-center justify-between">
@@ -274,7 +275,7 @@ export default async function SettingsPage() {
                         
                         <form action={updateOrgSettings}>
                             <input type="hidden" name="orgId" value={org.id} />
-                            <CardContent className="space-y-8">
+                            <CardContent className="space-y-8 pt-6">
                                 <div className="grid gap-2 max-w-2xl">
                                     <Label className="text-gray-700 font-medium">Nom de l'organisation</Label>
                                     <div className="relative">
@@ -324,6 +325,36 @@ export default async function SettingsPage() {
                             </CardFooter>
                         </form>
                     </Card>
+
+                    {/* SECTION 3 : ZONE DE DANGER (Seulement pour OWNER) */}
+                    {currentUserRole === 'owner' && (
+                        <Card className="border-red-100 shadow-sm overflow-hidden bg-white">
+                            <CardHeader className="border-b border-red-50 bg-red-50/30 pb-6">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <CardTitle className="text-xl flex items-center gap-2 text-red-700">
+                                            Zone de Danger
+                                        </CardTitle>
+                                        <CardDescription className="mt-1 text-red-600/80">
+                                            Actions irréversibles pour cette organisation.
+                                        </CardDescription>
+                                    </div>
+                                    <div className="h-10 w-10 bg-red-100 rounded-lg flex items-center justify-center text-red-600">
+                                        <AlertOctagon className="h-5 w-5" />
+                                    </div>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="pt-6 flex items-center justify-between">
+                                <div className="space-y-1">
+                                    <p className="font-medium text-gray-900">Supprimer l'organisation</p>
+                                    <p className="text-sm text-gray-500">
+                                        Cela supprimera définitivement l'organisation <strong>{org.name}</strong> et toutes ses données.
+                                    </p>
+                                </div>
+                                <DeleteOrgButton orgId={org.id} orgName={org.name} />
+                            </CardContent>
+                        </Card>
+                    )}
                   </>
               ) : (
                   <CardContent className="py-16 flex flex-col items-center justify-center text-center text-gray-500">

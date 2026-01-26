@@ -116,6 +116,47 @@ export async function updateOrgSettings(formData: FormData) {
   return { success: "Paramètres mis à jour" }
 }
 
+
+export async function deleteOrganization(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
+
+  const orgId = formData.get('orgId') as string
+  if (!orgId) return { error: "ID manquant" }
+
+  // 1. Vérification stricte : L'utilisateur est-il OWNER de cette org ?
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', orgId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!membership || membership.role !== 'owner') {
+      return { error: "Seul le propriétaire peut supprimer l'organisation." }
+  }
+
+  // 2. Suppression (La base de données doit être configurée avec ON DELETE CASCADE)
+  // Cela supprimera automatiquement les membres et les sites liés si tes Foreign Keys sont bien faites.
+  const { error } = await supabase
+    .from('organizations')
+    .delete()
+    .eq('id', orgId)
+
+  if (error) {
+      console.error("Delete Org Error:", error)
+      return { error: "Impossible de supprimer l'organisation." }
+  }
+
+  // 3. Nettoyage du cookie
+  const cookieStore = await cookies()
+  cookieStore.delete('active_org_id')
+
+  // 4. Redirection vers la home (qui redirigera vers une autre org ou le login)
+  redirect('/')
+}
+
 // --- 2. GESTION DES DOSSIERS (SITES) ---
 
 export async function createFolder(formData: FormData) {
