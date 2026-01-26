@@ -26,12 +26,13 @@ export function DeleteOrgButton({ orgId, orgName }: { orgId: number, orgName: st
 
     const res = await deleteOrganization(formData)
     
+    // Note : Si succès, le redirect server-side prend le relais.
+    // S'il y a une erreur qui revient :
     if (res?.error) {
         setIsLoading(false)
         toast.error(res.error)
         setOpen(false)
     }
-    // Si succès, le redirect du server action prend le relais
   }
 
   return (
@@ -54,18 +55,25 @@ export function DeleteOrgButton({ orgId, orgName }: { orgId: number, orgName: st
             </div>
             <DialogTitle className="text-xl">Supprimer définitivement ?</DialogTitle>
           </div>
-          <DialogDescription className="text-gray-500 pt-2 leading-relaxed">
+          
+          {/* On garde DialogDescription simple pour éviter l'erreur de hydration */}
+          <DialogDescription className="text-gray-500">
+            Cette action est irréversible.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* On met le contenu complexe ICI, en dehors du Header/Description */}
+        <div className="py-2 text-sm text-gray-600">
             Vous êtes sur le point de supprimer <strong>{orgName}</strong>.<br/><br/>
             Cette action entraînera la suppression immédiate de :
-            <ul className="list-disc list-inside mt-2 space-y-1 text-sm text-red-600/80 font-medium">
+            <ul className="list-disc list-inside mt-2 space-y-1 text-red-600/80 font-medium bg-red-50 p-3 rounded-md border border-red-100">
                 <li>Tous les sites surveillés</li>
                 <li>Tous les historiques d'audits</li>
                 <li>Tous les accès des membres de l'équipe</li>
             </ul>
-          </DialogDescription>
-        </DialogHeader>
+        </div>
 
-        <DialogFooter className="mt-6 gap-2 sm:gap-0">
+        <DialogFooter className="mt-4 gap-2 sm:gap-0">
           <Button 
             variant="outline" 
             onClick={() => setOpen(false)} 
