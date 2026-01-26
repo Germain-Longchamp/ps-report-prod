@@ -206,6 +206,13 @@ export default async function SettingsPage() {
                         </CardHeader>
                         
                         <CardContent className="pt-6 space-y-6">
+
+                            {/* Formulaire d'invitation */}
+                            <div>
+                                <InviteMemberForm />   
+                            </div>
+
+                            <Separator className="bg-gray-100" />
                             
                             {/* Liste des membres */}
                             <div className="space-y-4">
@@ -243,14 +250,7 @@ export default async function SettingsPage() {
                                     </div>
                                 ))}
                             </div>
-
-                            <Separator className="bg-gray-100" />
-
-                            {/* Formulaire d'invitation */}
-                            <div>
-                                <InviteMemberForm />   
-                            </div>
-
+                        
                         </CardContent>
                     </Card>
 
