@@ -274,7 +274,7 @@ export default async function SettingsPage() {
                         
                         <form action={updateOrgSettings}>
                             <input type="hidden" name="orgId" value={org.id} />
-                            <CardContent className="space-y-8 pt-8">
+                            <CardContent className="space-y-8">
                                 <div className="grid gap-2 max-w-2xl">
                                     <Label className="text-gray-700 font-medium">Nom de l'organisation</Label>
                                     <div className="relative">
