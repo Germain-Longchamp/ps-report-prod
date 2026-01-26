@@ -81,6 +81,8 @@
 @layer base {
   * {
     @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: #e4e4e7 transparent; /* Couleur thumb (zinc-200) / Couleur track (transparent) */
   }
   body {
     @apply bg-background text-foreground;
@@ -114,5 +116,42 @@
   ::-moz-selection {
     background-color: #000000;
     color: #ffffff;
+  }
+}
+
+
+/* Pour Chrome, Edge, Safari */
+::-webkit-scrollbar {
+  width: 10px;  /* Largeur verticale */
+  height: 10px; /* Hauteur horizontale */
+}
+
+::-webkit-scrollbar-track {
+  background: transparent; /* Fond invisible */
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #e4e4e7; /* Zinc-200 (gris très clair) */
+  border-radius: 9999px;     /* Bords totalement ronds */
+  
+  /* L'astuce pour avoir un effet "flottant" avec une marge autour */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #a1a1aa; /* Zinc-400 (plus foncé au survol) */
+}
+
+/* Ajustement spécifique pour le mode sombre si vous l'utilisez un jour */
+@media (prefers-color-scheme: dark) {
+  * {
+    scrollbar-color: #3f3f46 transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: #3f3f46; /* Zinc-700 */
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: #71717a; /* Zinc-500 */
   }
 }
