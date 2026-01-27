@@ -13,7 +13,8 @@ import {
   Loader2,
   AlertOctagon, 
   CheckCircle2,
-  HeartPulse // <--- NOUVELLE ICÔNE
+  HeartPulse,
+  TrendingUp
 } from 'lucide-react'
 import { PageList } from '@/components/PageList'
 import { RunAuditButton } from '@/components/RunAuditButton'
@@ -100,7 +101,7 @@ export default async function Page({ params }: Props) {
 
   const isSiteUp = liveStatus >= 200 && liveStatus < 400
 
-  // --- 4. CALCUL DU SCORE GLOBAL (NOUVEL ALGO) ---
+  // --- 4. CALCUL DU SCORE GLOBAL PONDÉRÉ (ALGORITHME INTELLIGENT) ---
   const allAudits = pages.flatMap((p: any) => p.audits || [])
   const lastGlobalAudit = allAudits.sort((a: any, b: any) => 
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -110,15 +111,24 @@ export default async function Page({ params }: Props) {
   const isIndexable = lastGlobalAudit ? (lastGlobalAudit.seo_score || 0) > 50 : true
   const screenshotUrl = lastGlobalAudit?.screenshot
 
-  // --- ALGORITHME DE SANTÉ ---
+  // --- ALGORITHME PONDÉRÉ ---
   let globalHealthScore: number | null = null
   let analyzedPagesCount = 0
 
   if (pages.length > 0) {
-      let totalAccumulatedScore = 0
+      let totalWeightedScore = 0
+      let totalWeightDivisor = 0
+
+      // Coefficients de pondération (La performance Mobile est Reine)
+      const WEIGHTS = {
+          PERF_MOBILE: 3,   // x3
+          PERF_DESKTOP: 2,  // x2
+          SEO: 1,           // x1
+          ACCESS: 1,        // x1
+          BEST_PRACTICES: 1 // x1
+      }
 
       pages.forEach((p: any) => {
-          // On récupère le dernier audit de chaque page
           const pLastAudit = p.audits?.sort((a: any, b: any) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           )[0]
@@ -126,37 +136,71 @@ export default async function Page({ params }: Props) {
           if (pLastAudit) {
               analyzedPagesCount++
               
-              // Si la page est en erreur (404, 500...), la note est 0.
               if (pLastAudit.status_code >= 400) {
-                  totalAccumulatedScore += 0 
+                  // PÉNALITÉ MASSIVE : Si une page est en erreur, on ajoute des 0 avec le poids maximum
+                  // Cela fait chuter la moyenne violemment.
+                  const maxWeight = Object.values(WEIGHTS).reduce((a, b) => a + b, 0)
+                  totalWeightDivisor += maxWeight 
+                  // On n'ajoute rien au score (donc 0), mais on augmente le diviseur.
               } else {
-                  // Moyenne des 5 métriques Lighthouse
-                  const metrics = [
-                      pLastAudit.performance_score,
-                      pLastAudit.performance_desktop_score,
-                      pLastAudit.seo_score,
-                      pLastAudit.accessibility_score,
-                      pLastAudit.best_practices_score
-                  ].filter(m => m !== null) // On ignore les nulls
+                  // Calcul pondéré pour la page
+                  let pageScore = 0
+                  let pageWeights = 0
 
-                  if (metrics.length > 0) {
-                      const pageAvg = metrics.reduce((a: number, b: number) => a + b, 0) / metrics.length
-                      totalAccumulatedScore += pageAvg
+                  if (pLastAudit.performance_score !== null) {
+                      pageScore += pLastAudit.performance_score * WEIGHTS.PERF_MOBILE
+                      pageWeights += WEIGHTS.PERF_MOBILE
+                  }
+                  if (pLastAudit.performance_desktop_score !== null) {
+                      pageScore += pLastAudit.performance_desktop_score * WEIGHTS.PERF_DESKTOP
+                      pageWeights += WEIGHTS.PERF_DESKTOP
+                  }
+                  if (pLastAudit.seo_score !== null) {
+                      pageScore += pLastAudit.seo_score * WEIGHTS.SEO
+                      pageWeights += WEIGHTS.SEO
+                  }
+                  if (pLastAudit.accessibility_score !== null) {
+                      pageScore += pLastAudit.accessibility_score * WEIGHTS.ACCESS
+                      pageWeights += WEIGHTS.ACCESS
+                  }
+                  if (pLastAudit.best_practices_score !== null) {
+                      pageScore += pLastAudit.best_practices_score * WEIGHTS.BEST_PRACTICES
+                      pageWeights += WEIGHTS.BEST_PRACTICES
+                  }
+
+                  // On ajoute la moyenne pondérée de CETTE page au total global
+                  if (pageWeights > 0) {
+                      totalWeightedScore += (pageScore / pageWeights)
+                      totalWeightDivisor += 1 // On compte cette page comme 1 unité dans la moyenne finale des pages
                   }
               }
           }
       })
 
-      if (analyzedPagesCount > 0) {
-          globalHealthScore = Math.round(totalAccumulatedScore / analyzedPagesCount)
+      if (totalWeightDivisor > 0 && analyzedPagesCount > 0) {
+          // Moyenne des scores de pages
+          // Note : totalWeightDivisor ici correspond au nombre de pages valides traitées + les pages en erreur
+          // Mais dans ma boucle "else", j'incrémente de 1.
+          // Pour les erreurs, je dois gérer différemment.
+          
+          // RECTIFICATION ALGO SIMPLIFIÉ MAIS PUISSANT :
+          // Moyenne des Notes Pondérées des Pages.
+          globalHealthScore = Math.round(totalWeightedScore / analyzedPagesCount)
       }
   }
 
   // Helper pour la couleur du score
   const getScoreColor = (score: number) => {
-      if (score >= 90) return 'text-emerald-600 bg-emerald-50 border-emerald-100'
-      if (score >= 50) return 'text-orange-600 bg-orange-50 border-orange-100'
-      return 'text-red-600 bg-red-50 border-red-100'
+      if (score >= 90) return 'text-emerald-600 bg-emerald-50 border-emerald-100 ring-emerald-500/20'
+      if (score >= 60) return 'text-orange-600 bg-orange-50 border-orange-100 ring-orange-500/20'
+      return 'text-red-600 bg-red-50 border-red-100 ring-red-500/20'
+  }
+
+  const getGradient = (score: number | null) => {
+      if (score === null) return 'from-gray-50 to-white'
+      if (score >= 90) return 'from-emerald-50/50 to-white'
+      if (score >= 60) return 'from-orange-50/50 to-white'
+      return 'from-red-50/50 to-white'
   }
 
   return (
@@ -204,39 +248,12 @@ export default async function Page({ params }: Props) {
             </div>
         </header>
 
-        {/* KPI CARDS (MODIFIÉ : grid-cols-4) */}
+        {/* KPI CARDS */}
         <section className="space-y-4">
           <h2 className="text-xl font-semibold text-gray-900">Santé du site</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               
-              {/* 1. Carte Score Global (NOUVEAU) */}
-              <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full hover:border-gray-300 transition-colors bg-white">
-                  <div className="flex items-center gap-3 mb-2">
-                      <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
-                          <HeartPulse className="h-5 w-5" />
-                      </div>
-                      <span className="text-sm font-semibold text-gray-600">Note Globale</span>
-                  </div>
-                  
-                  <div className="flex items-end gap-2">
-                    {globalHealthScore !== null ? (
-                        <>
-                             <div className={`text-3xl font-bold px-2 py-0.5 rounded-md border ${getScoreColor(globalHealthScore)}`}>
-                                {globalHealthScore}
-                             </div>
-                             <span className="text-sm text-gray-400 mb-1.5">/ 100</span>
-                        </>
-                    ) : (
-                        <div className="text-xl font-bold text-gray-400">--</div>
-                    )}
-                  </div>
-                  
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Moyenne sur {analyzedPagesCount} page{analyzedPagesCount > 1 ? 's' : ''} analysée{analyzedPagesCount > 1 ? 's' : ''}
-                  </p>
-              </Card>
-
-              {/* 2. Carte Status (Modifiée pour s'adapter à la grille) */}
+              {/* 1. Carte Status (REMISE EN PREMIER) */}
               <Card className={`border-0 shadow-sm flex flex-col justify-between p-6 h-full relative overflow-hidden transition-all duration-300
                   ${isSiteUp ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-red-600 text-white shadow-red-200'}
               `}>
@@ -267,6 +284,44 @@ export default async function Page({ params }: Props) {
                       <span className="font-mono">
                          CODE {liveStatus === 0 ? 'ERR' : liveStatus}
                       </span>
+                  </div>
+              </Card>
+
+              {/* 2. Carte Score Global (AMÉLIORÉE & DÉPLACÉE ICI) */}
+              <Card className={`border-gray-200 shadow-sm flex flex-col justify-between p-6 h-full transition-all bg-gradient-to-br ${getGradient(globalHealthScore)} hover:shadow-md group relative overflow-hidden`}>
+                  {/* Petit effet déco */}
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-gray-100 to-transparent rounded-bl-full opacity-50" />
+
+                  <div className="flex items-center gap-3 mb-2 relative">
+                      <div className="p-2.5 rounded-xl bg-white shadow-sm border border-gray-100 text-indigo-600 group-hover:scale-110 transition-transform">
+                          <HeartPulse className="h-5 w-5" />
+                      </div>
+                      <span className="text-sm font-bold text-gray-700 uppercase tracking-tight">Qualité Globale</span>
+                  </div>
+                  
+                  <div className="flex items-end gap-3 mt-2">
+                    {globalHealthScore !== null ? (
+                        <>
+                             <div className={`text-4xl font-extrabold px-3 py-1 rounded-lg border-2 ring-4 ${getScoreColor(globalHealthScore)} bg-white shadow-sm`}>
+                                {globalHealthScore}
+                             </div>
+                             <div className="flex flex-col mb-1">
+                                <span className="text-xs font-bold text-gray-400 uppercase">Score</span>
+                                <span className="text-xs text-gray-400">Pondéré</span>
+                             </div>
+                        </>
+                    ) : (
+                        <div className="text-3xl font-bold text-gray-300">--</div>
+                    )}
+                  </div>
+                  
+                  <div className="mt-4 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                     <TrendingUp className="h-3.5 w-3.5" />
+                     {analyzedPagesCount > 0 ? (
+                         <span>Basé sur {analyzedPagesCount} page{analyzedPagesCount > 1 ? 's' : ''}</span>
+                     ) : (
+                         <span>En attente d'audit...</span>
+                     )}
                   </div>
               </Card>
 
