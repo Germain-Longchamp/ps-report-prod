@@ -340,6 +340,74 @@ export async function deletePage(pageId: string, folderId: string) {
   return { success: "Page supprimée" }
 }
 
+// --- DANS app/actions.ts ---
+
+// Nouvelle fonction pour l'ajout en masse
+export async function createPagesBulk(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
+  
+  const folderId = formData.get('folderId') as string
+  const pagesJson = formData.get('pagesJson') as string
+  
+  if (!folderId || !pagesJson) return { error: "Données manquantes" }
+
+  const pagesToCreate = JSON.parse(pagesJson) as { name: string, url: string }[]
+
+  // 1. Vérif Droits (Optimisation : une seule vérif pour tout le lot)
+  const { data: folder } = await supabase
+    .from('folders')
+    .select('organization_id, organizations(google_api_key)')
+    .eq('id', folderId)
+    .single()
+
+  if (!folder) return { error: "Dossier introuvable" }
+
+  const { data: access } = await supabase.from('organization_members')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('organization_id', folder.organization_id)
+    .single()
+  
+  if (!access) return { error: "Accès refusé." }
+
+  // 2. Création des pages en base
+  // On insère tout d'un coup
+  const { data: newPages, error } = await supabase
+    .from('pages')
+    .insert(
+        pagesToCreate.map(p => ({
+            url: p.url,
+            name: p.name,
+            folder_id: folderId
+        }))
+    )
+    .select()
+
+  if (error || !newPages) {
+      console.error("Bulk Insert Error:", error)
+      return { error: "Erreur lors de la création des pages" }
+  }
+
+  // 3. Lancement des Audits (PARALLÈLE)
+  // On ne bloque pas pour chaque audit séquentiellement, on lance tout en même temps.
+  const apiKey = folder?.organizations?.google_api_key
+
+  if (apiKey) {
+      const auditPromises = newPages.map(page => 
+          _performAudit(page.url, folderId, apiKey, page.id)
+      )
+      // On attend que tous les audits soient finis (ou échoués)
+      // Note : Sur Vercel Hobby, attention au timeout de 10s. 
+      // Avec Promise.all, ça passe si < 5-6 pages car ça prend le temps du plus lent (~10-15s).
+      await Promise.all(auditPromises)
+  }
+
+  revalidatePath(`/site/${folderId}`)
+  return { success: true, count: newPages.length }
+}
+
 // --- 4. GESTION PROFIL ---
 
 export async function updateProfile(formData: FormData) {
