@@ -14,13 +14,21 @@ import {
   AlertOctagon, 
   CheckCircle2,
   HeartPulse,
-  TrendingUp
+  TrendingUp,
+  Info // <--- Import Info Icon
 } from 'lucide-react'
 import { PageList } from '@/components/PageList'
 import { RunAuditButton } from '@/components/RunAuditButton'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { SiteSettingsDialog } from '@/components/SiteSettingsDialog'
+// --- NOUVEAUX IMPORTS POUR L'INFOBULLE ---
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 export const dynamic = 'force-dynamic'
 
@@ -101,7 +109,7 @@ export default async function Page({ params }: Props) {
 
   const isSiteUp = liveStatus >= 200 && liveStatus < 400
 
-  // --- 4. CALCUL DU SCORE GLOBAL PONDÉRÉ (ALGORITHME INTELLIGENT) ---
+  // --- 4. CALCUL DU SCORE GLOBAL PONDÉRÉ ---
   const allAudits = pages.flatMap((p: any) => p.audits || [])
   const lastGlobalAudit = allAudits.sort((a: any, b: any) => 
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -117,16 +125,18 @@ export default async function Page({ params }: Props) {
 
   if (pages.length > 0) {
       let totalWeightedScore = 0
-      let totalWeightDivisor = 0
+      let totalWeightDivisor = 0 // Nombre total de "points de poids" accumulés
 
-      // Coefficients de pondération (La performance Mobile est Reine)
       const WEIGHTS = {
-          PERF_MOBILE: 3,   // x3
-          PERF_DESKTOP: 2,  // x2
-          SEO: 1,           // x1
-          ACCESS: 1,        // x1
-          BEST_PRACTICES: 1 // x1
+          PERF_MOBILE: 3,
+          PERF_DESKTOP: 2,
+          SEO: 1,
+          ACCESS: 1,
+          BEST_PRACTICES: 1
       }
+
+      // Somme des poids pour une page parfaite (3+2+1+1+1 = 8)
+      const MAX_PAGE_WEIGHT = Object.values(WEIGHTS).reduce((a, b) => a + b, 0)
 
       pages.forEach((p: any) => {
           const pLastAudit = p.audits?.sort((a: any, b: any) => 
@@ -137,59 +147,53 @@ export default async function Page({ params }: Props) {
               analyzedPagesCount++
               
               if (pLastAudit.status_code >= 400) {
-                  // PÉNALITÉ MASSIVE : Si une page est en erreur, on ajoute des 0 avec le poids maximum
-                  // Cela fait chuter la moyenne violemment.
-                  const maxWeight = Object.values(WEIGHTS).reduce((a, b) => a + b, 0)
-                  totalWeightDivisor += maxWeight 
-                  // On n'ajoute rien au score (donc 0), mais on augmente le diviseur.
+                  // Si erreur, on compte la page comme ayant contribué 0 points
+                  // Mais on l'ajoute au diviseur global comme si elle avait un poids plein (pour pénaliser la moyenne)
+                  // On simule que cette page "pèse" 1 dans la moyenne globale des pages
+                  // C'est un choix d'implémentation : soit on moyenne les métriques, soit on moyenne les pages.
+                  // Ici, pour simplifier et être juste : on calcule le score de CHAQUE page, puis on fait la moyenne des pages.
               } else {
-                  // Calcul pondéré pour la page
-                  let pageScore = 0
-                  let pageWeights = 0
+                  // 1. Calculer le score de CETTE page
+                  let currentScoreSum = 0
+                  let currentWeightSum = 0
 
                   if (pLastAudit.performance_score !== null) {
-                      pageScore += pLastAudit.performance_score * WEIGHTS.PERF_MOBILE
-                      pageWeights += WEIGHTS.PERF_MOBILE
+                      currentScoreSum += pLastAudit.performance_score * WEIGHTS.PERF_MOBILE
+                      currentWeightSum += WEIGHTS.PERF_MOBILE
                   }
                   if (pLastAudit.performance_desktop_score !== null) {
-                      pageScore += pLastAudit.performance_desktop_score * WEIGHTS.PERF_DESKTOP
-                      pageWeights += WEIGHTS.PERF_DESKTOP
+                      currentScoreSum += pLastAudit.performance_desktop_score * WEIGHTS.PERF_DESKTOP
+                      currentWeightSum += WEIGHTS.PERF_DESKTOP
                   }
                   if (pLastAudit.seo_score !== null) {
-                      pageScore += pLastAudit.seo_score * WEIGHTS.SEO
-                      pageWeights += WEIGHTS.SEO
+                      currentScoreSum += pLastAudit.seo_score * WEIGHTS.SEO
+                      currentWeightSum += WEIGHTS.SEO
                   }
                   if (pLastAudit.accessibility_score !== null) {
-                      pageScore += pLastAudit.accessibility_score * WEIGHTS.ACCESS
-                      pageWeights += WEIGHTS.ACCESS
+                      currentScoreSum += pLastAudit.accessibility_score * WEIGHTS.ACCESS
+                      currentWeightSum += WEIGHTS.ACCESS
                   }
                   if (pLastAudit.best_practices_score !== null) {
-                      pageScore += pLastAudit.best_practices_score * WEIGHTS.BEST_PRACTICES
-                      pageWeights += WEIGHTS.BEST_PRACTICES
+                      currentScoreSum += pLastAudit.best_practices_score * WEIGHTS.BEST_PRACTICES
+                      currentWeightSum += WEIGHTS.BEST_PRACTICES
                   }
 
-                  // On ajoute la moyenne pondérée de CETTE page au total global
-                  if (pageWeights > 0) {
-                      totalWeightedScore += (pageScore / pageWeights)
-                      totalWeightDivisor += 1 // On compte cette page comme 1 unité dans la moyenne finale des pages
+                  if (currentWeightSum > 0) {
+                      const pageScore = currentScoreSum / currentWeightSum
+                      totalWeightedScore += pageScore
                   }
               }
           }
       })
 
-      if (totalWeightDivisor > 0 && analyzedPagesCount > 0) {
-          // Moyenne des scores de pages
-          // Note : totalWeightDivisor ici correspond au nombre de pages valides traitées + les pages en erreur
-          // Mais dans ma boucle "else", j'incrémente de 1.
-          // Pour les erreurs, je dois gérer différemment.
-          
-          // RECTIFICATION ALGO SIMPLIFIÉ MAIS PUISSANT :
-          // Moyenne des Notes Pondérées des Pages.
+      if (analyzedPagesCount > 0) {
+          // Moyenne simple des scores pondérés des pages
+          // (Total des notes de pages / Nombre de pages)
+          // Les pages en erreur ont ajouté 0 au numérateur mais +1 au dénominateur => Note chute.
           globalHealthScore = Math.round(totalWeightedScore / analyzedPagesCount)
       }
   }
 
-  // Helper pour la couleur du score
   const getScoreColor = (score: number) => {
       if (score >= 90) return 'text-emerald-600 bg-emerald-50 border-emerald-100 ring-emerald-500/20'
       if (score >= 60) return 'text-orange-600 bg-orange-50 border-orange-100 ring-orange-500/20'
@@ -253,7 +257,7 @@ export default async function Page({ params }: Props) {
           <h2 className="text-xl font-semibold text-gray-900">Santé du site</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               
-              {/* 1. Carte Status (REMISE EN PREMIER) */}
+              {/* 1. Carte Status */}
               <Card className={`border-0 shadow-sm flex flex-col justify-between p-6 h-full relative overflow-hidden transition-all duration-300
                   ${isSiteUp ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-red-600 text-white shadow-red-200'}
               `}>
@@ -287,16 +291,38 @@ export default async function Page({ params }: Props) {
                   </div>
               </Card>
 
-              {/* 2. Carte Score Global (AMÉLIORÉE & DÉPLACÉE ICI) */}
-              <Card className={`border-gray-200 shadow-sm flex flex-col justify-between p-6 h-full transition-all bg-gradient-to-br ${getGradient(globalHealthScore)} hover:shadow-md group relative overflow-hidden`}>
+              {/* 2. Carte Score Global (AVEC TOOLTIP) */}
+              <Card className={`border-gray-200 shadow-sm flex flex-col justify-between p-6 h-full transition-all bg-gradient-to-br ${getGradient(globalHealthScore)} hover:shadow-md group relative overflow-hidden overflow-visible`}>
                   {/* Petit effet déco */}
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-gray-100 to-transparent rounded-bl-full opacity-50" />
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-gray-100 to-transparent rounded-bl-full opacity-50 pointer-events-none" />
 
-                  <div className="flex items-center gap-3 mb-2 relative">
-                      <div className="p-2.5 rounded-xl bg-white shadow-sm border border-gray-100 text-indigo-600 group-hover:scale-110 transition-transform">
-                          <HeartPulse className="h-5 w-5" />
+                  <div className="flex items-center justify-between mb-2 relative">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-white shadow-sm border border-gray-100 text-indigo-600 group-hover:scale-110 transition-transform">
+                            <HeartPulse className="h-5 w-5" />
+                        </div>
+                        <span className="text-sm font-bold text-gray-700 uppercase tracking-tight">Qualité Globale</span>
                       </div>
-                      <span className="text-sm font-bold text-gray-700 uppercase tracking-tight">Qualité Globale</span>
+
+                      {/* --- INFOBULLE --- */}
+                      <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Info className="h-4 w-4 text-gray-300 hover:text-indigo-600 transition-colors cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-[250px] bg-slate-900 text-slate-50 border-slate-800 p-3 text-xs leading-relaxed shadow-xl">
+                                <p className="font-semibold mb-1">Calcul pondéré sur {analyzedPagesCount} page(s) :</p>
+                                <ul className="list-disc list-inside space-y-0.5 text-slate-300">
+                                    <li>Performance Mobile <strong className="text-white">(x3)</strong></li>
+                                    <li>Performance Desktop <strong className="text-white">(x2)</strong></li>
+                                    <li>SEO & Autres <strong className="text-white">(x1)</strong></li>
+                                </ul>
+                                <p className="mt-2 text-red-300 italic">
+                                    Les pages en erreur (404/500) pénalisent fortement la moyenne.
+                                </p>
+                            </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                   </div>
                   
                   <div className="flex items-end gap-3 mt-2">
