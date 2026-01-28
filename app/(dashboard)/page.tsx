@@ -261,61 +261,6 @@ export default async function DashboardPage() {
         
       </div>
 
-      {/* SECTION SSL */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-gray-400" />
-                Certificats SSL
-            </h2>
-            <Link href="/ssl">
-                <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-                    Voir tout <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-            </Link>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {upcomingExpirations.length > 0 ? (
-                upcomingExpirations.map((site) => {
-                    const daysLeft = site.days_left || 0
-                    // Couleur dynamique selon l'urgence
-                    let statusColor = "bg-emerald-100 text-emerald-800 border-emerald-200"
-                    if (daysLeft < 7) statusColor = "bg-red-100 text-red-800 border-red-200 animate-pulse"
-                    else if (daysLeft < 30) statusColor = "bg-orange-100 text-orange-800 border-orange-200"
-
-                    return (
-                        <Card key={site.id} className="border-gray-200 shadow-sm hover:shadow-md transition-all">
-                            <CardContent className="p-4">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div className="font-semibold text-gray-900 truncate max-w-[120px]" title={site.name}>
-                                        {site.name}
-                                    </div>
-                                    <Badge variant="outline" className={`${statusColor} text-[10px] px-1.5`}>
-                                        J-{daysLeft}
-                                    </Badge>
-                                </div>
-                                <div className="text-xs text-gray-500 truncate mb-3">
-                                    {site.root_url}
-                                </div>
-                                <div className="text-xs font-medium text-gray-400 flex items-center gap-1">
-                                    Expire le : 
-                                    <span className="text-gray-700">
-                                        {new Date(site.ssl_expiry).toLocaleDateString('fr-FR')}
-                                    </span>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )
-                })
-            ) : (
-                <div className="col-span-full py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm">
-                    Aucune donnée SSL disponible pour le moment.
-                </div>
-            )}
-        </div>
-      </div>
-
       {/* STATUTS SYSTÈMES */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -403,6 +348,60 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {/* SECTION SSL */}
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-gray-400" />
+                Certificats SSL
+            </h2>
+            <Link href="/ssl">
+                <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
+                    Voir tout <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+            </Link>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {upcomingExpirations.length > 0 ? (
+                upcomingExpirations.map((site) => {
+                    const daysLeft = site.days_left || 0
+                    // Couleur dynamique selon l'urgence
+                    let statusColor = "bg-emerald-100 text-emerald-800 border-emerald-200"
+                    if (daysLeft < 7) statusColor = "bg-red-100 text-red-800 border-red-200 animate-pulse"
+                    else if (daysLeft < 30) statusColor = "bg-orange-100 text-orange-800 border-orange-200"
+
+                    return (
+                        <Card key={site.id} className="border-gray-200 shadow-sm hover:shadow-md transition-all">
+                            <CardContent className="p-4">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="font-semibold text-gray-900 truncate max-w-[120px]" title={site.name}>
+                                        {site.name}
+                                    </div>
+                                    <Badge variant="outline" className={`${statusColor} text-[10px] px-1.5`}>
+                                        J-{daysLeft}
+                                    </Badge>
+                                </div>
+                                <div className="text-xs text-gray-500 truncate mb-3">
+                                    {site.root_url}
+                                </div>
+                                <div className="text-xs font-medium text-gray-400 flex items-center gap-1">
+                                    Expire le : 
+                                    <span className="text-gray-700">
+                                        {new Date(site.ssl_expiry).toLocaleDateString('fr-FR')}
+                                    </span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )
+                })
+            ) : (
+                <div className="col-span-full py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm">
+                    Aucune donnée SSL disponible pour le moment.
+                </div>
+            )}
+        </div>
+      </div>
     </div>
   )
 }
