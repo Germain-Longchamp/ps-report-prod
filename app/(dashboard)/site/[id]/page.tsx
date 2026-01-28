@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { PageList } from '@/components/PageList'
 import { RunAuditButton } from '@/components/RunAuditButton'
+import { CreateSiteModal } from '@/components/CreateSiteModal'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { SiteSettingsDialog } from '@/components/SiteSettingsDialog'
@@ -254,7 +255,20 @@ export default async function Page({ params }: Props) {
 
         {/* KPI CARDS */}
         <section className="space-y-4">
-          <h2 className="text-xl font-semibold text-gray-900">Santé du site</h2>
+          <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-gray-400" />
+                  Statuts Systèmes
+              </h2>
+              
+              {/* Le bouton déclencheur de la modale */}
+              <CreateSiteModal>
+                  <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Ajouter un site
+                  </Button>
+              </CreateSiteModal>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               
               {/* 1. Carte Status */}
