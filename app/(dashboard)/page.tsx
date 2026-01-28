@@ -6,6 +6,7 @@ import { Folder, FileText, AlertOctagon, Activity, Globe, Calendar, CheckCircle2
 import { Badge } from '@/components/ui/badge'
 import { cookies } from 'next/headers'
 import { CreateOrgModal } from '@/components/CreateOrgModal'
+import { CreateSiteModal } from '@/components/CreateSiteModal'
 import { Button } from '@/components/ui/button'
 
 export const dynamic = 'force-dynamic'
@@ -229,10 +230,20 @@ export default async function DashboardPage() {
 
       {/* STATUTS SYSTÈMES */}
       <div className="space-y-6">
-        <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <Activity className="h-5 w-5 text-gray-400" />
-            Statuts Systèmes
-        </h2>
+        <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <Activity className="h-5 w-5 text-gray-400" />
+                Statuts Systèmes
+            </h2>
+            
+            {/* Le bouton déclencheur de la modale */}
+            <CreateSiteModal>
+                <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Ajouter un site
+                </Button>
+            </CreateSiteModal>
+        </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {folders.length > 0 ? (
