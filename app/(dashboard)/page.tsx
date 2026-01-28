@@ -2,7 +2,20 @@ import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Folder, FileText, AlertOctagon, Activity, Globe, Calendar, CheckCircle2, Server, Layers, Plus } from 'lucide-react'
+import { 
+  Folder, 
+  FileText, 
+  AlertOctagon, 
+  Activity, 
+  Globe, 
+  Calendar, 
+  CheckCircle2, 
+  Server, 
+  Layers, 
+  Plus, 
+  ShieldCheck, 
+  ArrowRight 
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cookies } from 'next/headers'
 import { CreateOrgModal } from '@/components/CreateOrgModal'
@@ -64,7 +77,7 @@ export default async function DashboardPage() {
   // 3. RÉCUPÉRATION DES DONNÉES FILTRÉES
   const [foldersRes, pagesRes, profileRes] = await Promise.all([
     supabase.from('folders')
-      .select('*, audits(id, status_code, created_at)')
+      .select('*, audits(id, status_code, created_at, ssl_expiry_date)') // Ajout de ssl_expiry_date
       .eq('organization_id', activeOrgId)
       .order('created_at', { ascending: false }),
     
@@ -102,6 +115,26 @@ export default async function DashboardPage() {
   pages.forEach(page => {
       if (hasError(page.audits)) totalIncidents++
   })
+
+  // 5. CALCUL DES CERTIFICATS SSL (Top 5 à renouveler)
+  const upcomingExpirations = folders
+    .map(folder => {
+      // On prend le dernier audit
+      const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+      return {
+        id: folder.id,
+        name: folder.name,
+        root_url: folder.root_url,
+        ssl_expiry: lastAudit?.ssl_expiry_date,
+        // Calcul du nombre de jours restants
+        days_left: lastAudit?.ssl_expiry_date 
+          ? Math.ceil((new Date(lastAudit.ssl_expiry_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) 
+          : null
+      }
+    })
+    .filter(item => item.ssl_expiry) // On garde ceux qui ont une date
+    .sort((a, b) => (a.days_left || 9999) - (b.days_left || 9999)) // Tri par expiration la plus proche
+    .slice(0, 5) // On garde les 5 premiers
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-12">
@@ -228,6 +261,61 @@ export default async function DashboardPage() {
         
       </div>
 
+      {/* SECTION SSL */}
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-gray-400" />
+                Certificats SSL
+            </h2>
+            <Link href="/ssl">
+                <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
+                    Voir tout <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+            </Link>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {upcomingExpirations.length > 0 ? (
+                upcomingExpirations.map((site) => {
+                    const daysLeft = site.days_left || 0
+                    // Couleur dynamique selon l'urgence
+                    let statusColor = "bg-emerald-100 text-emerald-800 border-emerald-200"
+                    if (daysLeft < 7) statusColor = "bg-red-100 text-red-800 border-red-200 animate-pulse"
+                    else if (daysLeft < 30) statusColor = "bg-orange-100 text-orange-800 border-orange-200"
+
+                    return (
+                        <Card key={site.id} className="border-gray-200 shadow-sm hover:shadow-md transition-all">
+                            <CardContent className="p-4">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="font-semibold text-gray-900 truncate max-w-[120px]" title={site.name}>
+                                        {site.name}
+                                    </div>
+                                    <Badge variant="outline" className={`${statusColor} text-[10px] px-1.5`}>
+                                        J-{daysLeft}
+                                    </Badge>
+                                </div>
+                                <div className="text-xs text-gray-500 truncate mb-3">
+                                    {site.root_url}
+                                </div>
+                                <div className="text-xs font-medium text-gray-400 flex items-center gap-1">
+                                    Expire le : 
+                                    <span className="text-gray-700">
+                                        {new Date(site.ssl_expiry).toLocaleDateString('fr-FR')}
+                                    </span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )
+                })
+            ) : (
+                <div className="col-span-full py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm">
+                    Aucune donnée SSL disponible pour le moment.
+                </div>
+            )}
+        </div>
+      </div>
+
       {/* STATUTS SYSTÈMES */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -236,7 +324,6 @@ export default async function DashboardPage() {
                 Statuts Systèmes
             </h2>
             
-            {/* Le bouton déclencheur de la modale */}
             <CreateSiteModal>
                 <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm">
                     <Plus className="h-4 w-4 mr-2" />
