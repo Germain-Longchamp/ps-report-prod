@@ -15,7 +15,7 @@ import {
   Plus, 
   ShieldCheck, 
   ArrowRight,
-  BarChart3
+  BarChart3 
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cookies } from 'next/headers'
@@ -82,6 +82,7 @@ export default async function DashboardPage() {
       .eq('organization_id', activeOrgId)
       .order('created_at', { ascending: false }),
     
+    // On récupère les scores détaillés pour le calcul de santé
     supabase.from('pages')
       .select('*, folders!inner(organization_id), audits(id, status_code, created_at, performance_score, performance_desktop_score, accessibility_score, best_practices_score, seo_score)')
       .eq('folders.organization_id', activeOrgId),
@@ -104,7 +105,7 @@ export default async function DashboardPage() {
       return last.status_code === 0 || last.status_code >= 400
   }
 
-  // CONSTANTES DE PONDÉRATION
+  // CONSTANTES DE PONDÉRATION (Identique à la page de détail)
   const WEIGHTS = {
     PERF_MOBILE: 3,
     PERF_DESKTOP: 2,
@@ -331,7 +332,7 @@ export default async function DashboardPage() {
         
       </div>
 
-      {/* STATUTS SYSTÈMES (Désormais en premier) */}
+      {/* STATUTS SYSTÈMES (En premier avec Design Amélioré) */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -365,14 +366,16 @@ export default async function DashboardPage() {
                     else scoreColor = "text-red-700 bg-red-50 border-red-200"
                 }
 
+                // STYLE CARD: Dégradé subtil + Hover effect "Lift"
+                const cardStyle = hasAudit 
+                    ? (isOnline 
+                        ? 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:to-white hover:border-emerald-400' 
+                        : 'border-red-200 bg-red-50/30 hover:border-red-400') 
+                    : 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:to-white hover:border-blue-400'
+
                 return (
                     <Link key={folder.id} href={`/site/${folder.id}`} className="group block h-full">
-                        <Card className={`h-full border transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer
-                            ${hasAudit 
-                                ? (isOnline ? 'border-gray-200 hover:border-emerald-400' : 'border-red-200 bg-red-50/30 hover:border-red-400') 
-                                : 'border-gray-200 hover:border-blue-400'
-                            }
-                        `}>
+                        <Card className={`h-full border transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer ${cardStyle}`}>
                             <CardContent className="p-5 flex items-start gap-4">
                                 <div className={`shrink-0 mt-1 h-3 w-3 rounded-full shadow-sm ring-4 transition-all duration-500
                                     ${hasAudit 
@@ -384,6 +387,8 @@ export default async function DashboardPage() {
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between mb-1">
                                         <h3 className="font-bold text-gray-900 truncate text-sm">{folder.name}</h3>
+                                        
+                                        {/* Badge Score de Santé */}
                                         {healthScore !== null && (
                                             <Badge variant="outline" className={`text-[10px] h-5 px-1.5 font-bold flex items-center gap-1 ${scoreColor}`}>
                                                 <BarChart3 className="h-3 w-3" />
@@ -435,7 +440,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* SECTION SSL (Désormais en second) */}
+      {/* SECTION SSL (En second avec Design Amélioré) */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -457,8 +462,9 @@ export default async function DashboardPage() {
                     if (daysLeft < 7) statusColor = "bg-red-100 text-red-800 border-red-200 animate-pulse"
                     else if (daysLeft < 30) statusColor = "bg-orange-100 text-orange-800 border-orange-200"
 
+                    // Design amélioré : fond léger + effet lift
                     return (
-                        <Card key={site.id} className="border-gray-200 shadow-sm hover:shadow-md transition-all">
+                        <Card key={site.id} className="border-gray-200 bg-gradient-to-br from-white to-gray-50/50 shadow-sm hover:shadow-md hover:to-white hover:-translate-y-0.5 transition-all cursor-default">
                             <CardContent className="p-4">
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="font-semibold text-gray-900 truncate max-w-[120px]" title={site.name}>
