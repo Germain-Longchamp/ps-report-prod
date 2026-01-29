@@ -15,7 +15,7 @@ import {
   Plus, 
   ShieldCheck, 
   ArrowRight,
-  BarChart3 // Nouvelle icône pour la santé
+  BarChart3
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cookies } from 'next/headers'
@@ -82,7 +82,6 @@ export default async function DashboardPage() {
       .eq('organization_id', activeOrgId)
       .order('created_at', { ascending: false }),
     
-    // MODIFICATION ICI : On récupère les scores détaillés pour le calcul
     supabase.from('pages')
       .select('*, folders!inner(organization_id), audits(id, status_code, created_at, performance_score, performance_desktop_score, accessibility_score, best_practices_score, seo_score)')
       .eq('folders.organization_id', activeOrgId),
@@ -105,7 +104,7 @@ export default async function DashboardPage() {
       return last.status_code === 0 || last.status_code >= 400
   }
 
-  // CONSTANTES DE PONDÉRATION (Identique à la page de détail)
+  // CONSTANTES DE PONDÉRATION
   const WEIGHTS = {
     PERF_MOBILE: 3,
     PERF_DESKTOP: 2,
@@ -118,7 +117,7 @@ export default async function DashboardPage() {
   const folderMetricsMap: Record<string, { status: number | undefined, healthScore: number | null }> = {}
 
   folders.forEach(folder => {
-      // 4a. Statut HTTP (déjà existant)
+      // 4a. Statut HTTP
       const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
       let status = undefined
       if (lastAudit) {
@@ -126,8 +125,7 @@ export default async function DashboardPage() {
           if (hasError(folder.audits)) totalIncidents++
       }
 
-      // 4b. Calcul de la note de santé globale (NOUVEAU)
-      // On récupère toutes les pages de ce dossier
+      // 4b. Calcul de la note de santé globale pondérée
       const sitePages = pages.filter(p => p.folder_id === folder.id)
       let healthScore: number | null = null
       
@@ -174,8 +172,6 @@ export default async function DashboardPage() {
                        totalWeightedScore += pageScore
                    }
                 }
-                // Si erreur (>=400), la page compte dans analyzedPagesCount mais ajoute 0 au totalWeightedScore
-                // Ce qui fait baisser la moyenne globale
              }
           })
 
@@ -187,7 +183,7 @@ export default async function DashboardPage() {
       folderMetricsMap[folder.id] = { status, healthScore }
   })
 
-  // Vérification incidents sur les pages orphelines (si besoin, logique existante)
+  // Vérification incidents sur les pages orphelines
   pages.forEach(page => {
       if (hasError(page.audits)) totalIncidents++
   })
@@ -335,61 +331,7 @@ export default async function DashboardPage() {
         
       </div>
 
-      {/* SECTION SSL */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-gray-400" />
-                Certificats SSL
-            </h2>
-            <Link href="/ssl">
-                <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-                    Voir tout <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-            </Link>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {upcomingExpirations.length > 0 ? (
-                upcomingExpirations.map((site) => {
-                    const daysLeft = site.days_left || 0
-                    let statusColor = "bg-emerald-100 text-emerald-800 border-emerald-200"
-                    if (daysLeft < 7) statusColor = "bg-red-100 text-red-800 border-red-200 animate-pulse"
-                    else if (daysLeft < 30) statusColor = "bg-orange-100 text-orange-800 border-orange-200"
-
-                    return (
-                        <Card key={site.id} className="border-gray-200 shadow-sm hover:shadow-md transition-all">
-                            <CardContent className="p-4">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div className="font-semibold text-gray-900 truncate max-w-[120px]" title={site.name}>
-                                        {site.name}
-                                    </div>
-                                    <Badge variant="outline" className={`${statusColor} text-[10px] px-1.5`}>
-                                        J-{daysLeft}
-                                    </Badge>
-                                </div>
-                                <div className="text-xs text-gray-500 truncate mb-3">
-                                    {site.root_url}
-                                </div>
-                                <div className="text-xs font-medium text-gray-400 flex items-center gap-1">
-                                    Expire le : 
-                                    <span className="text-gray-700">
-                                        {new Date(site.ssl_expiry).toLocaleDateString('fr-FR')}
-                                    </span>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )
-                })
-            ) : (
-                <div className="col-span-full py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm">
-                    Aucune donnée SSL disponible pour le moment.
-                </div>
-            )}
-        </div>
-      </div>
-
-      {/* STATUTS SYSTÈMES */}
+      {/* STATUTS SYSTÈMES (Désormais en premier) */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -442,7 +384,6 @@ export default async function DashboardPage() {
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between mb-1">
                                         <h3 className="font-bold text-gray-900 truncate text-sm">{folder.name}</h3>
-                                        {/* Badge Score ajouté ICI */}
                                         {healthScore !== null && (
                                             <Badge variant="outline" className={`text-[10px] h-5 px-1.5 font-bold flex items-center gap-1 ${scoreColor}`}>
                                                 <BarChart3 className="h-3 w-3" />
@@ -468,7 +409,6 @@ export default async function DashboardPage() {
                                                 : "En attente..."
                                             }
                                         </span>
-                                        {/* Status Code affiché discrètement à droite */}
                                         {hasAudit && (
                                             <span className="font-mono text-gray-400 opacity-70">
                                                 {status === 0 ? 'ERR' : status}
@@ -492,6 +432,60 @@ export default async function DashboardPage() {
                 </p>
              </div>
           )}
+        </div>
+      </div>
+
+      {/* SECTION SSL (Désormais en second) */}
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-gray-400" />
+                Certificats SSL
+            </h2>
+            <Link href="/ssl">
+                <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
+                    Voir tout <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+            </Link>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {upcomingExpirations.length > 0 ? (
+                upcomingExpirations.map((site) => {
+                    const daysLeft = site.days_left || 0
+                    let statusColor = "bg-emerald-100 text-emerald-800 border-emerald-200"
+                    if (daysLeft < 7) statusColor = "bg-red-100 text-red-800 border-red-200 animate-pulse"
+                    else if (daysLeft < 30) statusColor = "bg-orange-100 text-orange-800 border-orange-200"
+
+                    return (
+                        <Card key={site.id} className="border-gray-200 shadow-sm hover:shadow-md transition-all">
+                            <CardContent className="p-4">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="font-semibold text-gray-900 truncate max-w-[120px]" title={site.name}>
+                                        {site.name}
+                                    </div>
+                                    <Badge variant="outline" className={`${statusColor} text-[10px] px-1.5`}>
+                                        J-{daysLeft}
+                                    </Badge>
+                                </div>
+                                <div className="text-xs text-gray-500 truncate mb-3">
+                                    {site.root_url}
+                                </div>
+                                <div className="text-xs font-medium text-gray-400 flex items-center gap-1">
+                                    Expire le : 
+                                    <span className="text-gray-700">
+                                        {new Date(site.ssl_expiry).toLocaleDateString('fr-FR')}
+                                    </span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )
+                })
+            ) : (
+                <div className="col-span-full py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm">
+                    Aucune donnée SSL disponible pour le moment.
+                </div>
+            )}
         </div>
       </div>
 
