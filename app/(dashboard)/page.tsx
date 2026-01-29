@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { 
   Folder, 
-  FileText, 
   AlertOctagon, 
   Activity, 
   Globe, 
@@ -15,7 +14,8 @@ import {
   Plus, 
   ShieldCheck, 
   ArrowRight,
-  BarChart3 
+  BarChart3,
+  Building2 // Nouvelle icône pour l'organisation
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cookies } from 'next/headers'
@@ -76,18 +76,21 @@ export default async function DashboardPage() {
   const greeting = hour >= 18 ? 'Bonsoir' : 'Bonjour'
 
   // 3. RÉCUPÉRATION DES DONNÉES FILTRÉES
-  const [foldersRes, pagesRes, profileRes] = await Promise.all([
+  const [foldersRes, pagesRes, profileRes, orgRes] = await Promise.all([
     supabase.from('folders')
       .select('*, audits(id, status_code, created_at, ssl_expiry_date)') 
       .eq('organization_id', activeOrgId)
       .order('created_at', { ascending: false }),
     
-    // On récupère les scores détaillés pour le calcul de santé
+    // Scores détaillés pour le calcul de santé
     supabase.from('pages')
       .select('*, folders!inner(organization_id), audits(id, status_code, created_at, performance_score, performance_desktop_score, accessibility_score, best_practices_score, seo_score)')
       .eq('folders.organization_id', activeOrgId),
 
-    supabase.from('profiles').select('first_name').eq('id', user.id).single()
+    supabase.from('profiles').select('first_name').eq('id', user.id).single(),
+    
+    // NOUVEAU : Récupération du nom de l'organisation
+    supabase.from('organizations').select('name').eq('id', activeOrgId).single()
   ])
 
   const folders = foldersRes.data || []
@@ -95,6 +98,7 @@ export default async function DashboardPage() {
   
   const profile = profileRes.data
   const userName = profile?.first_name || user.email?.split('@')[0] || 'Utilisateur'
+  const orgName = orgRes.data?.name || "Organisation Active"
 
   // 4. CALCUL DES INCIDENTS & SANTÉ GLOBALE
   let totalIncidents = 0
@@ -105,7 +109,7 @@ export default async function DashboardPage() {
       return last.status_code === 0 || last.status_code >= 400
   }
 
-  // CONSTANTES DE PONDÉRATION (Identique à la page de détail)
+  // CONSTANTES DE PONDÉRATION
   const WEIGHTS = {
     PERF_MOBILE: 3,
     PERF_DESKTOP: 2,
@@ -114,11 +118,9 @@ export default async function DashboardPage() {
     BEST_PRACTICES: 1
   }
 
-  // Map pour stocker le statut et le score de santé de chaque dossier
   const folderMetricsMap: Record<string, { status: number | undefined, healthScore: number | null }> = {}
 
   folders.forEach(folder => {
-      // 4a. Statut HTTP
       const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
       let status = undefined
       if (lastAudit) {
@@ -126,7 +128,7 @@ export default async function DashboardPage() {
           if (hasError(folder.audits)) totalIncidents++
       }
 
-      // 4b. Calcul de la note de santé globale pondérée
+      // Calcul de la note de santé
       const sitePages = pages.filter(p => p.folder_id === folder.id)
       let healthScore: number | null = null
       
@@ -141,8 +143,6 @@ export default async function DashboardPage() {
 
              if (pLastAudit) {
                 analyzedPagesCount++
-                
-                // Si pas d'erreur critique (404/500), on calcule le score
                 if (pLastAudit.status_code < 400) {
                    let currentScoreSum = 0
                    let currentWeightSum = 0
@@ -184,12 +184,11 @@ export default async function DashboardPage() {
       folderMetricsMap[folder.id] = { status, healthScore }
   })
 
-  // Vérification incidents sur les pages orphelines
   pages.forEach(page => {
       if (hasError(page.audits)) totalIncidents++
   })
 
-  // 5. CALCUL DES CERTIFICATS SSL (Top 5 à renouveler)
+  // 5. CALCUL DES CERTIFICATS SSL (Top 5)
   const upcomingExpirations = folders
     .map(folder => {
       const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
@@ -208,41 +207,49 @@ export default async function DashboardPage() {
     .slice(0, 5)
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-12">
+    <div className="p-8 max-w-7xl mx-auto space-y-10">
       
-      {/* HEADER */}
+      {/* HEADER REDESSINÉ */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
-        <div>
-            <div className="flex items-center gap-2 text-sm text-gray-500 font-medium mb-2 uppercase tracking-wide">
-                <Calendar className="h-4 w-4 text-blue-500" />
-                <span className="capitalize">{formattedDate}</span>
+        <div className="space-y-3">
+            {/* Meta-barre avec l'Org et la Date */}
+            <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 shadow-sm">
+                    <Building2 className="h-3.5 w-3.5" />
+                    <span className="text-sm font-semibold tracking-tight">{orgName}</span>
+                </div>
+                <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
+                <div className="flex items-center gap-2 text-sm text-gray-500 font-medium uppercase tracking-wide">
+                    <Calendar className="h-3.5 w-3.5" />
+                    <span className="capitalize">{formattedDate}</span>
+                </div>
             </div>
-            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900">
-                {greeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 capitalize">{userName}</span>
+
+            {/* Titre réduit en taille */}
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
+                {greeting}, <span className="text-gray-600 font-normal">{userName}</span>
             </h1>
-            <p className="text-gray-500 mt-2 max-w-xl text-lg">
-                Rapport de performance pour l'organisation active.
-            </p>
         </div>
         
-        <div className={`hidden md:flex items-center gap-6 text-sm font-medium px-4 py-2 rounded-full border shadow-sm transition-colors
+        {/* Status Badge */}
+        <div className={`hidden md:flex items-center gap-4 text-sm font-medium px-4 py-2 rounded-full border shadow-sm transition-colors
             ${totalIncidents === 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}
         `}>
             {totalIncidents === 0 ? (
                 <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    Systèmes opérationnels
+                    <span>Systèmes opérationnels</span>
                 </div>
             ) : (
                 <div className="flex items-center gap-2">
                     <AlertOctagon className="h-4 w-4 text-red-600" />
-                    {totalIncidents} incident(s) détecté(s)
+                    <span>{totalIncidents} incident(s) détecté(s)</span>
                 </div>
             )}
         </div>
       </div>
 
-      {/* KPI CARDS */}
+      {/* KPI CARDS (avec style amélioré) */}
       <div className="grid gap-6 md:grid-cols-3">
         
         <Card className="relative overflow-hidden border-blue-100 bg-gradient-to-br from-white to-blue-50/50 shadow-sm hover:shadow-md transition-all group">
@@ -261,6 +268,7 @@ export default async function DashboardPage() {
                     Projets monitorés
                 </div>
             </CardContent>
+            {/* Effet décoratif */}
             <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-blue-100/50 blur-2xl group-hover:bg-blue-200/50 pointer-events-none" />
         </Card>
 
@@ -332,7 +340,7 @@ export default async function DashboardPage() {
         
       </div>
 
-      {/* STATUTS SYSTÈMES (En premier avec Design Amélioré) */}
+      {/* STATUTS SYSTÈMES */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -358,7 +366,6 @@ export default async function DashboardPage() {
                 const hasAudit = status !== undefined
                 const isOnline = hasAudit && (status >= 200 && status < 400)
 
-                // Couleur du badge Score
                 let scoreColor = "text-gray-600 bg-gray-100 border-gray-200"
                 if (healthScore !== null) {
                     if (healthScore >= 90) scoreColor = "text-emerald-700 bg-emerald-50 border-emerald-200"
@@ -366,7 +373,7 @@ export default async function DashboardPage() {
                     else scoreColor = "text-red-700 bg-red-50 border-red-200"
                 }
 
-                // STYLE CARD: Dégradé subtil + Hover effect "Lift"
+                // STYLE CARD AMÉLIORÉ : Dégradé + Lift
                 const cardStyle = hasAudit 
                     ? (isOnline 
                         ? 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:to-white hover:border-emerald-400' 
@@ -388,7 +395,6 @@ export default async function DashboardPage() {
                                     <div className="flex items-center justify-between mb-1">
                                         <h3 className="font-bold text-gray-900 truncate text-sm">{folder.name}</h3>
                                         
-                                        {/* Badge Score de Santé */}
                                         {healthScore !== null && (
                                             <Badge variant="outline" className={`text-[10px] h-5 px-1.5 font-bold flex items-center gap-1 ${scoreColor}`}>
                                                 <BarChart3 className="h-3 w-3" />
@@ -440,7 +446,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* SECTION SSL (En second avec Design Amélioré) */}
+      {/* SECTION SSL */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
@@ -462,7 +468,7 @@ export default async function DashboardPage() {
                     if (daysLeft < 7) statusColor = "bg-red-100 text-red-800 border-red-200 animate-pulse"
                     else if (daysLeft < 30) statusColor = "bg-orange-100 text-orange-800 border-orange-200"
 
-                    // Design amélioré : fond léger + effet lift
+                    // Style Card avec dégradé subtil
                     return (
                         <Card key={site.id} className="border-gray-200 bg-gradient-to-br from-white to-gray-50/50 shadow-sm hover:shadow-md hover:to-white hover:-translate-y-0.5 transition-all cursor-default">
                             <CardContent className="p-4">
