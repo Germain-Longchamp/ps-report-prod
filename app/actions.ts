@@ -78,6 +78,35 @@ export async function createOrganization(formData: FormData) {
   return { success: true } 
 }
 
+export async function updateOrgName(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
+
+  const orgName = formData.get('orgName') as string
+  const orgId = formData.get('orgId') as string
+
+  if (!orgName || !orgName.trim()) return { error: "Le nom ne peut pas être vide." }
+
+  // Vérification de sécurité (on vérifie l'org active)
+  const { activeOrgId, error } = await _getActiveOrgAndMember(supabase, user.id)
+  if (error) return { error }
+
+  if (String(activeOrgId) !== orgId) return { error: "Incohérence d'organisation." }
+
+  const { error: updateError } = await supabase
+    .from('organizations')
+    .update({ name: orgName })
+    .eq('id', activeOrgId)
+
+  if (updateError) return { error: "Erreur technique lors de la mise à jour." }
+
+  revalidatePath('/settings')
+  // On revalide aussi le layout car le nom de l'org est souvent affiché dans le header/sidebar
+  revalidatePath('/', 'layout') 
+  return { success: "Organisation renommée avec succès." }
+}
+
 export async function switchOrganization(orgId: string) {
   const cookieStore = await cookies()
   cookieStore.set('active_org_id', orgId, {
