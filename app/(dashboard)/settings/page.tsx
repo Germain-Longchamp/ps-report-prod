@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { InviteMemberForm } from '@/components/InviteMemberForm'
 import { RemoveMemberButton } from '@/components/RemoveMemberButton'
-import { DeleteOrgButton } from '@/components/DeleteOrgButton' // <--- IMPORT
+import { DeleteOrgButton } from '@/components/DeleteOrgButton'
+import { EditOrgNameForm } from '@/components/EditOrgNameForm' // <--- NOUVEL IMPORT
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { 
   Tabs, 
@@ -16,7 +17,8 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { 
     User, Key, Save, Building2, Mail, 
-    Users, Crown, AlertOctagon 
+    Users, Crown, AlertOctagon,
+    LayoutDashboard
 } from 'lucide-react'
 import { updateProfile, updateOrgSettings } from '@/app/actions'
 import { cookies } from 'next/headers'
@@ -56,7 +58,7 @@ export default async function SettingsPage() {
   // 4. Récupérer Org + Membres
   let org = null
   let members: any[] = []
-  let currentUserRole = 'member' // Par défaut
+  let currentUserRole = 'member'
   
   if (activeOrgId) {
     const { data: orgData } = await supabase
@@ -73,7 +75,6 @@ export default async function SettingsPage() {
     
     members = membersData || []
 
-    // Trouver le rôle de l'utilisateur connecté
     const currentMember = members.find((m: any) => m.user_id === user.id)
     if (currentMember) currentUserRole = currentMember.role
   }
@@ -131,7 +132,7 @@ export default async function SettingsPage() {
                       </div>
                   </div>
 
-                  {/* Formulaire */}
+                  {/* Formulaire Profil */}
                   <Card className="border-gray-200 shadow-sm overflow-hidden bg-white">
                       <CardHeader className="bg-white border-b border-gray-100 pb-6">
                           <CardTitle className="text-xl">Informations personnelles</CardTitle>
@@ -191,7 +192,29 @@ export default async function SettingsPage() {
               
               {org ? (
                   <>
-                    {/* SECTION 1 : GESTION DE L'ÉQUIPE */}
+                    {/* BLOC 1 : IDENTITÉ ORGANISATION (NOUVEAU) */}
+                    <Card className="border-gray-200 shadow-sm overflow-hidden bg-white">
+                        <CardHeader className="border-b border-gray-100 pb-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <CardTitle className="text-xl flex items-center gap-2">
+                                        Identité de l'Organisation
+                                    </CardTitle>
+                                    <CardDescription className="mt-1">
+                                        Modifiez le nom public de votre espace de travail.
+                                    </CardDescription>
+                                </div>
+                                <div className="h-10 w-10 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+                                    <LayoutDashboard className="h-5 w-5" />
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="space-y-6 pt-6">
+                            <EditOrgNameForm orgId={org.id} initialName={org.name} />
+                        </CardContent>
+                    </Card>
+
+                    {/* BLOC 2 : GESTION DE L'ÉQUIPE (DÉPLACÉ) */}
                     <Card className="border-gray-200 shadow-sm overflow-hidden bg-white">
                         <CardHeader className="border-b border-gray-100 pb-6">
                             <div className="flex items-center justify-between">
@@ -203,14 +226,13 @@ export default async function SettingsPage() {
                                         Gérez les accès à cette organisation.
                                     </CardDescription>
                                 </div>
-                                <div className="h-10 w-10 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+                                <div className="h-10 w-10 bg-purple-50 rounded-lg flex items-center justify-center text-purple-600">
                                     <Users className="h-5 w-5" />
                                 </div>
                             </div>
                         </CardHeader>
                         
                         <CardContent className="space-y-6 pt-6">
-                            {/* Formulaire d'invitation (visible seulement si admin idéalement, mais ok ici) */}
                             <div>
                                 <InviteMemberForm />   
                             </div>
@@ -244,7 +266,6 @@ export default async function SettingsPage() {
                                                 </Badge>
                                             )}
 
-                                            {/* Bouton pour retirer (ne pas se retirer soi-même ici) */}
                                             {member.user_id !== user.id && currentUserRole === 'owner' && (
                                                 <RemoveMemberButton userId={member.user_id} />
                                             )}
@@ -255,7 +276,7 @@ export default async function SettingsPage() {
                         </CardContent>
                     </Card>
 
-                    {/* SECTION 2 : CONFIGURATION API */}
+                    {/* BLOC 3 : CONFIGURATION API (DÉPLACÉ ET NETTOYÉ) */}
                     <Card className="border-gray-200 shadow-sm overflow-hidden bg-white">
                         <CardHeader className="border-b border-gray-100 pb-6">
                             <div className="flex items-center justify-between">
@@ -276,19 +297,7 @@ export default async function SettingsPage() {
                         <form action={updateOrgSettings}>
                             <input type="hidden" name="orgId" value={org.id} />
                             <CardContent className="space-y-8 pt-6">
-                                <div className="grid gap-2 max-w-2xl">
-                                    <Label className="text-gray-700 font-medium">Nom de l'organisation</Label>
-                                    <div className="relative">
-                                        <Input 
-                                            value={org.name || 'Mon Organisation'} 
-                                            disabled 
-                                            className="bg-gray-50 border-gray-200 text-gray-600 font-medium cursor-default"
-                                        />
-                                        <div className="absolute right-3 top-2.5">
-                                            <span className="px-2 py-0.5 bg-black text-white text-[10px] rounded-full font-bold tracking-wider">PRO</span>
-                                        </div>
-                                    </div>
-                                </div>
+                                {/* Le champ Nom a été retiré d'ici */}
 
                                 <div className="grid gap-4 max-w-2xl">
                                     <div className="flex items-center justify-between">
@@ -315,18 +324,21 @@ export default async function SettingsPage() {
                                             className="pl-10 font-mono text-sm border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all h-11"
                                         />
                                     </div>
+                                    <p className="text-xs text-gray-500">
+                                        Cette clé est utilisée pour lancer les audits de performance pour l'organisation <strong>{org.name}</strong>.
+                                    </p>
                                 </div>
                             </CardContent>
                             <CardFooter className="bg-gray-50/50 px-6 py-4 flex justify-end border-t border-gray-100">
                                 <Button type="submit" className="bg-black text-white hover:bg-zinc-800 shadow-lg shadow-black/10 transition-all active:scale-95">
                                     <Save className="h-4 w-4 mr-2" />
-                                    Sauvegarder
+                                    Sauvegarder la clé
                                 </Button>
                             </CardFooter>
                         </form>
                     </Card>
 
-                    {/* SECTION 3 : ZONE DE DANGER (Seulement pour OWNER) */}
+                    {/* BLOC 4 : ZONE DE DANGER */}
                     {currentUserRole === 'owner' && (
                         <Card className="border-red-100 shadow-sm overflow-hidden bg-white">
                             <CardHeader className="border-b border-red-50 bg-red-50/30 pb-6">
