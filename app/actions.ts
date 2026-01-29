@@ -7,12 +7,11 @@ import { cookies } from 'next/headers'
 import https from 'https'
 
 // --- UTILITAIRE : Récupérer l'ID Org Actif (Avec Fallback intelligent) ---
-// Cette fonction est CRITIQUE pour éviter le bug "Aucune organisation active"
 async function _getActiveOrgAndMember(supabase: any, userId: string) {
   const cookieStore = await cookies()
   let activeOrgId = Number(cookieStore.get('active_org_id')?.value)
 
-  // Cas 1 : On a un cookie, on vérifie qu'il est toujours valide
+  // Cas 1 : Cookie présent
   if (activeOrgId) {
     const { data: member } = await supabase
       .from('organization_members')
@@ -21,11 +20,10 @@ async function _getActiveOrgAndMember(supabase: any, userId: string) {
       .eq('organization_id', activeOrgId)
       .single()
 
-    // Si le membre existe bien pour cet ID, c'est gagné
     if (member) return { activeOrgId, member }
   }
 
-  // Cas 2 : Pas de cookie OU le cookie est invalide
+  // Cas 2 : Fallback
   const { data: fallbackMember } = await supabase
     .from('organization_members')
     .select('organization_id, role')
@@ -181,14 +179,14 @@ export async function createFolder(formData: FormData) {
 
   if (!name || !rootUrl) return { error: "Nom et URL requis." }
 
-  // 1. URL Normalization (CRITIQUE POUR ÉVITER LES CRASHS AUDIT)
+  // 1. Nettoyage URL (Critique pour éviter erreur 500 Google)
   rootUrl = rootUrl.trim()
   if (!rootUrl.startsWith('http')) {
       rootUrl = `https://${rootUrl}`
   }
   rootUrl = rootUrl.replace(/\/$/, '')
 
-  // 2. Utilisation de la fonction ROBUSTE pour l'org
+  // 2. Auth & Org Check
   const { activeOrgId, error: authError } = await _getActiveOrgAndMember(supabase, user.id)
   if (authError || !activeOrgId) return { error: authError || "Aucune organisation active." }
 
@@ -216,10 +214,15 @@ export async function createFolder(formData: FormData) {
     return { error: "Impossible de créer le site." }
   }
 
-  // 4. LANCEMENT AUDIT IMMÉDIAT
-  // MODIFICATION : On passe la clé (même si null) et l'URL propre.
-  // On ne conditionne plus l'audit à la présence de la clé.
-  await _performAudit(rootUrl, folder.id, orgData?.google_api_key || null, null) 
+  // 4. LANCEMENT AUDIT SÉCURISÉ (Try/Catch pour ne jamais bloquer la création)
+  try {
+      // On tente avec la clé si elle existe, sinon NULL (mode sans clé)
+      const apiKey = orgData?.google_api_key || null
+      await _performAudit(rootUrl, folder.id, apiKey, null)
+  } catch (auditError) {
+      // On log juste l'erreur, mais on laisse le site se créer pour ne pas bloquer l'user
+      console.error("Warning: Audit initial échoué mais site créé.", auditError)
+  }
 
   revalidatePath('/', 'layout') 
   return { success: true, id: folder.id }
@@ -333,9 +336,14 @@ export async function createPage(formData: FormData) {
 
   if (error || !newPage) return { error: "Erreur ajout page" }
 
+  // Audit permissif (null si pas de clé)
   // @ts-ignore
   const apiKey = folder?.organizations?.google_api_key || null
-  await _performAudit(url, folderId, apiKey, newPage.id)
+  try {
+      await _performAudit(url, folderId, apiKey, newPage.id)
+  } catch (e) {
+      console.error("Audit page failed", e)
+  }
 
   revalidatePath(`/site/${folderId}`)
   return { success: "Page ajoutée et analysée !" }
@@ -435,7 +443,13 @@ export async function createPagesBulk(formData: FormData) {
   const auditPromises = newPages.map(page => 
       _performAudit(page.url, folderId, apiKey, page.id)
   )
-  await Promise.all(auditPromises)
+  // On n'attend pas forcément tout pour éviter le timeout si beaucoup de pages
+  // Mais pour un petit nombre c'est OK
+  try {
+      await Promise.all(auditPromises)
+  } catch (e) {
+      console.error("Bulk audit error (non-blocking)")
+  }
 
   revalidatePath(`/site/${folderId}`)
   return { success: true, count: newPages.length }
@@ -465,7 +479,7 @@ export async function updateProfile(formData: FormData) {
   return { success: "Profil mis à jour" }
 }
 
-// --- 5. MOTEUR D'AUDIT (SÉCURISÉ & FLEXIBLE) ---
+// --- 5. MOTEUR D'AUDIT (ROBUSTE) ---
 
 function getSSLExpiry(targetUrl: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -495,7 +509,7 @@ function getSSLExpiry(targetUrl: string): Promise<string | null> {
   })
 }
 
-// MODIFICATION : apiKey peut être null
+// MODIFICATION CRITIQUE : apiKey peut être null
 async function _performAudit(url: string, folderId: string, apiKey: string | null, pageId: string | null = null) {
   const supabase = await createClient()
   
@@ -512,20 +526,24 @@ async function _performAudit(url: string, folderId: string, apiKey: string | nul
     realStatusCode = 0 
   }
 
-  // Construction dynamique de l'URL
+  // Construction dynamique : si pas de clé, on utilise l'API publique (quotas réduits mais ça marche)
   let baseUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance&category=accessibility&category=best-practices&category=seo`
   
-  // On n'ajoute &key=... que si elle existe
   if (apiKey) {
       baseUrl += `&key=${apiKey}`
   }
 
   try {
+    // Timeout manuel pour éviter le "spin" infini
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 20000) // 20s max
+
     const [mobileRes, desktopRes, sslDate] = await Promise.all([
-      fetch(`${baseUrl}&strategy=mobile`, { cache: 'no-store' }),
-      fetch(`${baseUrl}&strategy=desktop`, { cache: 'no-store' }),
+      fetch(`${baseUrl}&strategy=mobile`, { cache: 'no-store', signal: controller.signal }),
+      fetch(`${baseUrl}&strategy=desktop`, { cache: 'no-store', signal: controller.signal }),
       getSSLExpiry(url)
     ])
+    clearTimeout(timeoutId)
 
     const mobileData = await mobileRes.json()
     const desktopData = await desktopRes.json()
@@ -533,16 +551,15 @@ async function _performAudit(url: string, folderId: string, apiKey: string | nul
     if (mobileData.error || desktopData.error) {
         console.error("Lighthouse API Error:", mobileData.error || desktopData.error)
         
-        // IMPORTANT : On enregistre quand même une ligne en base pour éviter que la carte reste "grise/vide"
-        // Cela permet d'afficher "Hors Ligne" ou "Erreur" sur le dashboard
         const finalCode = realStatusCode !== 0 ? realStatusCode : 500
+        // On enregistre l'erreur en base pour que l'UI ne soit pas vide
         await supabase.from('audits').insert({
             folder_id: folderId,
             page_id: pageId,
             url: url,
             status_code: finalCode,
             https_valid: false,
-            report_json: mobileData.error || desktopData.error || { error: "Unknown API error" }
+            report_json: mobileData.error || desktopData.error
         })
         return { success: true, statusCode: finalCode } 
     }
@@ -584,14 +601,16 @@ async function _performAudit(url: string, folderId: string, apiKey: string | nul
 
   } catch (err) {
     console.error(`Crash audit catch ${url}:`, err)
-    // Sécurité anti-crash
+    
+    // IMPORTANT: On insère une ligne d'erreur pour dire "ça a planté" plutôt que rien
     await supabase.from('audits').insert({
         folder_id: folderId,
         page_id: pageId,
         url: url,
         status_code: 0,
-        report_json: { error: "Crash serveur ou timeout" }
+        report_json: { error: "Crash serveur ou timeout audit" }
     })
+    
     return { error: "Erreur technique." }
   }
 }
@@ -607,7 +626,6 @@ export async function runPageSpeedAudit(url: string, folderId: string, pageId?: 
 
   // @ts-ignore
   const apiKey = folder?.organizations?.google_api_key || null
-  // Plus de blocage si apiKey est null
   
   const result = await _performAudit(url, folderId, apiKey, pageId || null)
   
@@ -634,8 +652,7 @@ export async function runGlobalAudit(folderId: string) {
 
   // @ts-ignore
   const apiKey = folder.organizations?.google_api_key || null
-  // Plus de blocage si apiKey est null
-
+  
   const tasks = []
   tasks.push(_performAudit(folder.root_url, folder.id, apiKey, null))
 
