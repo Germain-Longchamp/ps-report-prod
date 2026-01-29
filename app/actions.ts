@@ -198,20 +198,19 @@ export async function createFolder(formData: FormData) {
 
   if (!name || !rootUrl) return { error: "Nom et URL requis." }
 
-  // 1. Récupérer l'org active + LA CLÉ API pour l'audit
-  const cookieStore = await cookies()
-  const activeOrgId = Number(cookieStore.get('active_org_id')?.value)
-  
-  if (!activeOrgId) return { error: "Aucune organisation active." }
+  // 1. RÉCUPÉRATION ROBUSTE DE L'ORG ACTIVE (Correction ici)
+  // On utilise la fonction utilitaire qui gère le fallback si le cookie est vide
+  const { activeOrgId, error: authError } = await _getActiveOrgAndMember(supabase, user.id)
+  if (authError || !activeOrgId) return { error: authError || "Aucune organisation active." }
 
-  // On récupère l'organisation pour avoir la clé API
+  // 2. Récupérer la Clé API de l'organisation trouvée
   const { data: orgData } = await supabase
     .from('organizations')
     .select('google_api_key')
     .eq('id', activeOrgId)
     .single()
 
-  // 2. Insertion du site
+  // 3. Insertion du site
   const { data: folder, error } = await supabase
     .from('folders')
     .insert({ 
@@ -229,10 +228,9 @@ export async function createFolder(formData: FormData) {
     return { error: "Impossible de créer le site." }
   }
 
-  // 3. LANCEMENT AUDIT IMMÉDIAT (Step 2 du parcours)
+  // 4. LANCEMENT AUDIT IMMÉDIAT
   if (orgData?.google_api_key) {
-      // On lance l'audit en tâche de fond (sans await bloquant si on veut, 
-      // mais ici on await pour être sûr que la page suivante a des données)
+      // On lance l'audit sur l'URL racine
       await _performAudit(rootUrl, folder.id, orgData.google_api_key, null) 
   }
 
