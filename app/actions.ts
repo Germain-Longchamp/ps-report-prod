@@ -7,6 +7,7 @@ import { cookies } from 'next/headers'
 import https from 'https'
 
 // --- UTILITAIRE : Récupérer l'ID Org Actif (Avec Fallback intelligent) ---
+// Cette fonction est CRITIQUE pour éviter le bug "Aucune organisation active"
 async function _getActiveOrgAndMember(supabase: any, userId: string) {
   const cookieStore = await cookies()
   let activeOrgId = Number(cookieStore.get('active_org_id')?.value)
@@ -24,8 +25,7 @@ async function _getActiveOrgAndMember(supabase: any, userId: string) {
     if (member) return { activeOrgId, member }
   }
 
-  // Cas 2 : Pas de cookie OU le cookie est invalide (ex: on a été viré de l'orga)
-  // => On lance le PLAN B : Chercher la première organisation dispo en base
+  // Cas 2 : Pas de cookie OU le cookie est invalide
   const { data: fallbackMember } = await supabase
     .from('organization_members')
     .select('organization_id, role')
@@ -34,14 +34,12 @@ async function _getActiveOrgAndMember(supabase: any, userId: string) {
     .single()
 
   if (fallbackMember) {
-    // On a trouvé une orga de secours (celle créée à l'inscription par ex)
     return { 
         activeOrgId: fallbackMember.organization_id, 
         member: fallbackMember 
     }
   }
 
-  // Cas 3 : Vraiment aucune organisation trouvée
   return { error: "Accès refusé. Vous n'êtes membre d'aucune organisation." }
 }
 
@@ -62,8 +60,6 @@ export async function createOrganization(formData: FormData) {
     return { error: 'Impossible de créer l\'organisation.' }
   }
 
-  // MODIFICATION ICI : On définit le cookie, mais on ne redirige PAS.
-  // On renvoie le succès au client pour qu'il ferme la modale proprement.
   if (newOrgId) {
     const cookieStore = await cookies()
     cookieStore.set('active_org_id', newOrgId.toString(), {
@@ -88,7 +84,6 @@ export async function updateOrgName(formData: FormData) {
 
   if (!orgName || !orgName.trim()) return { error: "Le nom ne peut pas être vide." }
 
-  // Vérification de sécurité (on vérifie l'org active)
   const { activeOrgId, error } = await _getActiveOrgAndMember(supabase, user.id)
   if (error) return { error }
 
@@ -102,7 +97,6 @@ export async function updateOrgName(formData: FormData) {
   if (updateError) return { error: "Erreur technique lors de la mise à jour." }
 
   revalidatePath('/settings')
-  // On revalide aussi le layout car le nom de l'org est souvent affiché dans le header/sidebar
   revalidatePath('/', 'layout') 
   return { success: "Organisation renommée avec succès." }
 }
@@ -114,7 +108,7 @@ export async function switchOrganization(orgId: string) {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 30 // 30 jours
+    maxAge: 60 * 60 * 24 * 30 
   })
   redirect('/') 
 }
@@ -125,13 +119,11 @@ export async function updateOrgSettings(formData: FormData) {
   if (!user) return { error: "Non connecté" }
 
   const apiKey = formData.get('apiKey') as string
-  const orgId = formData.get('orgId') as string // Sécurité additionnelle
+  const orgId = formData.get('orgId') as string
 
-  // On vérifie que c'est bien l'org active et qu'on est membre
-  const { activeOrgId, member, error } = await _getActiveOrgAndMember(supabase, user.id)
+  const { activeOrgId, error } = await _getActiveOrgAndMember(supabase, user.id)
   if (error) return { error }
 
-  // Sécurité double : on s'assure que l'ID du formulaire correspond au contexte
   if (String(activeOrgId) !== orgId) return { error: "Incohérence d'organisation." }
 
   const { error: updateError } = await supabase
@@ -145,7 +137,6 @@ export async function updateOrgSettings(formData: FormData) {
   return { success: "Paramètres mis à jour" }
 }
 
-
 export async function deleteOrganization(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -154,7 +145,6 @@ export async function deleteOrganization(formData: FormData) {
   const orgId = formData.get('orgId') as string
   if (!orgId) return { error: "ID manquant" }
 
-  // 1. Vérification stricte : L'utilisateur est-il OWNER de cette org ?
   const { data: membership } = await supabase
     .from('organization_members')
     .select('role')
@@ -166,23 +156,16 @@ export async function deleteOrganization(formData: FormData) {
       return { error: "Seul le propriétaire peut supprimer l'organisation." }
   }
 
-  // 2. Suppression (La base de données doit être configurée avec ON DELETE CASCADE)
-  // Cela supprimera automatiquement les membres et les sites liés si tes Foreign Keys sont bien faites.
   const { error } = await supabase
     .from('organizations')
     .delete()
     .eq('id', orgId)
 
-  if (error) {
-      console.error("Delete Org Error:", error)
-      return { error: "Impossible de supprimer l'organisation." }
-  }
+  if (error) return { error: "Impossible de supprimer l'organisation." }
 
-  // 3. Nettoyage du cookie
   const cookieStore = await cookies()
   cookieStore.delete('active_org_id')
 
-  // 4. Redirection vers la home (qui redirigera vers une autre org ou le login)
   redirect('/')
 }
 
@@ -194,23 +177,28 @@ export async function createFolder(formData: FormData) {
   if (!user) return { error: "Non connecté." }
 
   const name = formData.get('name') as string
-  const rootUrl = formData.get('rootUrl') as string
+  let rootUrl = formData.get('rootUrl') as string
 
   if (!name || !rootUrl) return { error: "Nom et URL requis." }
 
-  // 1. RÉCUPÉRATION ROBUSTE DE L'ORG ACTIVE (Correction ici)
-  // On utilise la fonction utilitaire qui gère le fallback si le cookie est vide
+  // 1. URL Normalization (CRITIQUE POUR ÉVITER LES CRASHS AUDIT)
+  rootUrl = rootUrl.trim()
+  if (!rootUrl.startsWith('http')) {
+      rootUrl = `https://${rootUrl}`
+  }
+  rootUrl = rootUrl.replace(/\/$/, '')
+
+  // 2. Utilisation de la fonction ROBUSTE pour l'org
   const { activeOrgId, error: authError } = await _getActiveOrgAndMember(supabase, user.id)
   if (authError || !activeOrgId) return { error: authError || "Aucune organisation active." }
 
-  // 2. Récupérer la Clé API de l'organisation trouvée
   const { data: orgData } = await supabase
     .from('organizations')
     .select('google_api_key')
     .eq('id', activeOrgId)
     .single()
 
-  // 3. Insertion du site
+  // 3. Insertion
   const { data: folder, error } = await supabase
     .from('folders')
     .insert({ 
@@ -229,10 +217,9 @@ export async function createFolder(formData: FormData) {
   }
 
   // 4. LANCEMENT AUDIT IMMÉDIAT
-  if (orgData?.google_api_key) {
-      // On lance l'audit sur l'URL racine
-      await _performAudit(rootUrl, folder.id, orgData.google_api_key, null) 
-  }
+  // MODIFICATION : On passe la clé (même si null) et l'URL propre.
+  // On ne conditionne plus l'audit à la présence de la clé.
+  await _performAudit(rootUrl, folder.id, orgData?.google_api_key || null, null) 
 
   revalidatePath('/', 'layout') 
   return { success: true, id: folder.id }
@@ -249,9 +236,6 @@ export async function updateFolder(formData: FormData) {
 
   if (!folderId || !name || !rawUrl) return { error: "Données incomplètes" }
 
-  // On vérifie que le folder appartient bien à une org dont on est membre
-  // (Pas besoin de forcer l'org active ici, tant qu'on a le droit d'écrire sur ce folder via RLS ou check manuel)
-  // Pour faire simple : on check si on a accès au folder via organization_members
   const { data: folder } = await supabase.from('folders').select('organization_id').eq('id', folderId).single()
   if (!folder) return { error: "Dossier introuvable" }
 
@@ -263,7 +247,6 @@ export async function updateFolder(formData: FormData) {
   
   if (!access) return { error: "Droit refusé sur ce dossier." }
 
-  // Nettoyage URL
   let cleanUrl = rawUrl.trim()
   if (!cleanUrl.startsWith('http')) {
     cleanUrl = `https://${cleanUrl}`
@@ -272,10 +255,7 @@ export async function updateFolder(formData: FormData) {
 
   const { error } = await supabase
     .from('folders')
-    .update({ 
-        name, 
-        root_url: cleanUrl 
-    })
+    .update({ name, root_url: cleanUrl })
     .eq('id', folderId)
 
   if (error) return { error: "Erreur lors de la mise à jour." }
@@ -290,7 +270,6 @@ export async function deleteFolder(folderId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Non connecté" }
   
-  // Vérif droits (même logique que update)
   const { data: folder } = await supabase.from('folders').select('organization_id').eq('id', folderId).single()
   if (!folder) return { error: "Dossier introuvable" }
 
@@ -326,7 +305,6 @@ export async function createPage(formData: FormData) {
   
   if (!url || !folderId) return { error: "URL requise" }
 
-  // Vérif droits sur le dossier parent
   const { data: folder } = await supabase
     .from('folders')
     .select('organization_id, organizations(google_api_key)')
@@ -335,7 +313,6 @@ export async function createPage(formData: FormData) {
 
   if (!folder) return { error: "Dossier parent introuvable" }
 
-  // Check membership
   const { data: access } = await supabase.from('organization_members')
     .select('id')
     .eq('user_id', user.id)
@@ -344,7 +321,6 @@ export async function createPage(formData: FormData) {
   
   if (!access) return { error: "Accès refusé." }
 
-  // Insertion
   const { data: newPage, error } = await supabase
     .from('pages')
     .insert({
@@ -357,12 +333,9 @@ export async function createPage(formData: FormData) {
 
   if (error || !newPage) return { error: "Erreur ajout page" }
 
-  // Lancer l'audit
   // @ts-ignore
-  const apiKey = folder?.organizations?.google_api_key
-  if (apiKey) {
-    await _performAudit(url, folderId, apiKey, newPage.id)
-  }
+  const apiKey = folder?.organizations?.google_api_key || null
+  await _performAudit(url, folderId, apiKey, newPage.id)
 
   revalidatePath(`/site/${folderId}`)
   return { success: "Page ajoutée et analysée !" }
@@ -379,8 +352,6 @@ export async function updatePageName(formData: FormData) {
 
   if (!pageId || !name) return { error: "Données manquantes" }
 
-  // 1. Vérification des droits (via le dossier parent)
-  // On récupère le folder_id de la page pour remonter à l'orga
   const { data: page } = await supabase.from('pages').select('folder_id').eq('id', pageId).single()
   if (!page) return { error: "Page introuvable" }
 
@@ -395,7 +366,6 @@ export async function updatePageName(formData: FormData) {
 
   if (!access) return { error: "Action non autorisée" }
 
-  // 2. Mise à jour
   const { error } = await supabase
     .from('pages')
     .update({ name })
@@ -409,22 +379,12 @@ export async function updatePageName(formData: FormData) {
 
 export async function deletePage(pageId: string, folderId: string) {
   const supabase = await createClient()
-  // Note: On pourrait ajouter une vérif de droits ici aussi pour être puriste
-  
-  const { error } = await supabase
-    .from('pages')
-    .delete()
-    .eq('id', pageId)
-
+  const { error } = await supabase.from('pages').delete().eq('id', pageId)
   if (error) return { error: "Impossible de supprimer" }
-  
   revalidatePath(`/site/${folderId}`)
   return { success: "Page supprimée" }
 }
 
-// --- DANS app/actions.ts ---
-
-// Nouvelle fonction pour l'ajout en masse
 export async function createPagesBulk(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -437,7 +397,6 @@ export async function createPagesBulk(formData: FormData) {
 
   const pagesToCreate = JSON.parse(pagesJson) as { name: string, url: string }[]
 
-  // 1. Vérif Droits (Optimisation : une seule vérif pour tout le lot)
   const { data: folder } = await supabase
     .from('folders')
     .select('organization_id, organizations(google_api_key)')
@@ -454,8 +413,6 @@ export async function createPagesBulk(formData: FormData) {
   
   if (!access) return { error: "Accès refusé." }
 
-  // 2. Création des pages en base
-  // On insère tout d'un coup
   const { data: newPages, error } = await supabase
     .from('pages')
     .insert(
@@ -472,25 +429,17 @@ export async function createPagesBulk(formData: FormData) {
       return { error: "Erreur lors de la création des pages" }
   }
 
-  // 3. Lancement des Audits (PARALLÈLE)
-  // On ne bloque pas pour chaque audit séquentiellement, on lance tout en même temps.
-  const apiKey = folder?.organizations?.google_api_key
+  // @ts-ignore
+  const apiKey = folder?.organizations?.google_api_key || null
 
-  if (apiKey) {
-      const auditPromises = newPages.map(page => 
-          _performAudit(page.url, folderId, apiKey, page.id)
-      )
-      // On attend que tous les audits soient finis (ou échoués)
-      // Note : Sur Vercel Hobby, attention au timeout de 10s. 
-      // Avec Promise.all, ça passe si < 5-6 pages car ça prend le temps du plus lent (~10-15s).
-      await Promise.all(auditPromises)
-  }
+  const auditPromises = newPages.map(page => 
+      _performAudit(page.url, folderId, apiKey, page.id)
+  )
+  await Promise.all(auditPromises)
 
   revalidatePath(`/site/${folderId}`)
   return { success: true, count: newPages.length }
 }
-
-// --- 4. GESTION PROFIL ---
 
 export async function updateProfile(formData: FormData) {
   const supabase = await createClient()
@@ -516,7 +465,7 @@ export async function updateProfile(formData: FormData) {
   return { success: "Profil mis à jour" }
 }
 
-// --- 5. MOTEUR D'AUDIT (INCHANGÉ MAIS NÉCESSAIRE) ---
+// --- 5. MOTEUR D'AUDIT (SÉCURISÉ & FLEXIBLE) ---
 
 function getSSLExpiry(targetUrl: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -546,7 +495,8 @@ function getSSLExpiry(targetUrl: string): Promise<string | null> {
   })
 }
 
-async function _performAudit(url: string, folderId: string, apiKey: string, pageId: string | null = null) {
+// MODIFICATION : apiKey peut être null
+async function _performAudit(url: string, folderId: string, apiKey: string | null, pageId: string | null = null) {
   const supabase = await createClient()
   
   let realStatusCode = 0
@@ -558,12 +508,18 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
     })
     realStatusCode = checkRes.status
   } catch (err) {
-    console.error("Erreur Fetch:", err)
+    console.error("Erreur Fetch Initial:", err)
     realStatusCode = 0 
   }
 
-  const baseUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&key=${apiKey}&category=performance&category=accessibility&category=best-practices&category=seo`
+  // Construction dynamique de l'URL
+  let baseUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance&category=accessibility&category=best-practices&category=seo`
   
+  // On n'ajoute &key=... que si elle existe
+  if (apiKey) {
+      baseUrl += `&key=${apiKey}`
+  }
+
   try {
     const [mobileRes, desktopRes, sslDate] = await Promise.all([
       fetch(`${baseUrl}&strategy=mobile`, { cache: 'no-store' }),
@@ -575,6 +531,10 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
     const desktopData = await desktopRes.json()
 
     if (mobileData.error || desktopData.error) {
+        console.error("Lighthouse API Error:", mobileData.error || desktopData.error)
+        
+        // IMPORTANT : On enregistre quand même une ligne en base pour éviter que la carte reste "grise/vide"
+        // Cela permet d'afficher "Hors Ligne" ou "Erreur" sur le dashboard
         const finalCode = realStatusCode !== 0 ? realStatusCode : 500
         await supabase.from('audits').insert({
             folder_id: folderId,
@@ -582,7 +542,7 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
             url: url,
             status_code: finalCode,
             https_valid: false,
-            report_json: mobileData
+            report_json: mobileData.error || desktopData.error || { error: "Unknown API error" }
         })
         return { success: true, statusCode: finalCode } 
     }
@@ -623,7 +583,15 @@ async function _performAudit(url: string, folderId: string, apiKey: string, page
     return { success: true, statusCode: realStatusCode }
 
   } catch (err) {
-    console.error(`Crash audit ${url}:`, err)
+    console.error(`Crash audit catch ${url}:`, err)
+    // Sécurité anti-crash
+    await supabase.from('audits').insert({
+        folder_id: folderId,
+        page_id: pageId,
+        url: url,
+        status_code: 0,
+        report_json: { error: "Crash serveur ou timeout" }
+    })
     return { error: "Erreur technique." }
   }
 }
@@ -638,9 +606,9 @@ export async function runPageSpeedAudit(url: string, folderId: string, pageId?: 
     .single()
 
   // @ts-ignore
-  const apiKey = folder?.organizations?.google_api_key
-  if (!apiKey) return { error: "Clé API manquante" }
-
+  const apiKey = folder?.organizations?.google_api_key || null
+  // Plus de blocage si apiKey est null
+  
   const result = await _performAudit(url, folderId, apiKey, pageId || null)
   
   if (!pageId && result.success) {
@@ -665,8 +633,8 @@ export async function runGlobalAudit(folderId: string) {
   if (!folder) return { error: "Dossier introuvable" }
 
   // @ts-ignore
-  const apiKey = folder.organizations?.google_api_key
-  if (!apiKey) return { error: "Clé API manquante" }
+  const apiKey = folder.organizations?.google_api_key || null
+  // Plus de blocage si apiKey est null
 
   const tasks = []
   tasks.push(_performAudit(folder.root_url, folder.id, apiKey, null))
@@ -694,87 +662,57 @@ export async function getAuditDetails(auditId: string) {
   return { report: data.report_json }
 }
 
-
 // --- 5. GESTION DES MEMBRES ---
-
 
 export async function inviteMember(formData: FormData) {
   const supabase = await createClient()
-  
-  // 1. Auth Check basique
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Non connecté" }
 
   const email = formData.get('email') as string
   if (!email) return { error: "Email requis" }
 
-  // 2. Récupérer l'org active (via cookie)
   const cookieStore = await cookies()
   const activeOrgId = Number(cookieStore.get('active_org_id')?.value)
   
   if (!activeOrgId) return { error: "Aucune organisation active." }
 
-  // 3. APPEL DE LA FONCTION SQL (Tout se fait là-dedans)
   const { data: result, error } = await supabase.rpc('add_member_by_email', {
     target_email: email,
     target_org_id: activeOrgId
   })
 
-  if (error) {
-    console.error("Erreur RPC:", error)
-    return { error: "Erreur technique lors de l'ajout." }
-  }
+  if (error) return { error: "Erreur technique lors de l'ajout." }
 
-  // 4. Gestion des retours de la fonction SQL
   switch (result) {
     case 'success':
       revalidatePath('/settings')
       return { success: "Utilisateur ajouté à l'équipe !" }
-    
-    case 'user_not_found':
-      return { error: "Aucun utilisateur trouvé avec cet email." }
-    
-    case 'already_member':
-      return { error: "Cet utilisateur fait déjà partie de l'équipe." }
-    
-    case 'not_authorized':
-      return { error: "Vous devez être Admin (Owner) pour ajouter des membres." }
-      
-    default:
-      return { error: "Erreur inconnue." }
+    case 'user_not_found': return { error: "Aucun utilisateur trouvé avec cet email." }
+    case 'already_member': return { error: "Cet utilisateur fait déjà partie de l'équipe." }
+    case 'not_authorized': return { error: "Vous devez être Admin (Owner) pour ajouter des membres." }
+    default: return { error: "Erreur inconnue." }
   }
 }
 
 export async function removeMember(formData: FormData) {
   const supabase = await createClient()
-  
-  // 1. Auth Check
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Non connecté" }
 
   const targetUserId = formData.get('userId') as string
-  
-  // 2. Org Check
   const cookieStore = await cookies()
   const activeOrgId = Number(cookieStore.get('active_org_id')?.value)
   if (!activeOrgId) return { error: "Aucune organisation active" }
 
-  // 3. Appel SQL (RPC)
   const { data: result, error } = await supabase.rpc('remove_org_member', {
     target_user_id: targetUserId,
     target_org_id: activeOrgId
   })
 
-  if (error) {
-    console.error("Erreur Remove:", error)
-    return { error: "Erreur technique." }
-  }
+  if (error) return { error: "Erreur technique." }
+  if (result === 'not_authorized') return { error: "Vous n'avez pas les droits." }
 
-  if (result === 'not_authorized') {
-    return { error: "Vous n'avez pas les droits pour faire ça." }
-  }
-
-  // 4. Important : Rafraîchir les données
   revalidatePath('/settings')
   return { success: "Membre retiré." }
 }
