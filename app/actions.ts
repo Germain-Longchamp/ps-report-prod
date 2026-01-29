@@ -325,6 +325,45 @@ export async function createPage(formData: FormData) {
   return { success: "Page ajoutée et analysée !" }
 }
 
+export async function updatePageName(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Non connecté" }
+
+  const pageId = formData.get('pageId') as string
+  const name = formData.get('name') as string
+  const folderId = formData.get('folderId') as string
+
+  if (!pageId || !name) return { error: "Données manquantes" }
+
+  // 1. Vérification des droits (via le dossier parent)
+  // On récupère le folder_id de la page pour remonter à l'orga
+  const { data: page } = await supabase.from('pages').select('folder_id').eq('id', pageId).single()
+  if (!page) return { error: "Page introuvable" }
+
+  const { data: folder } = await supabase.from('folders').select('organization_id').eq('id', page.folder_id).single()
+  if (!folder) return { error: "Dossier parent introuvable" }
+
+  const { data: access } = await supabase.from('organization_members')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('organization_id', folder.organization_id)
+    .single()
+
+  if (!access) return { error: "Action non autorisée" }
+
+  // 2. Mise à jour
+  const { error } = await supabase
+    .from('pages')
+    .update({ name })
+    .eq('id', pageId)
+
+  if (error) return { error: "Erreur lors du renommage" }
+
+  revalidatePath(`/site/${folderId}`)
+  return { success: "Page renommée avec succès" }
+}
+
 export async function deletePage(pageId: string, folderId: string) {
   const supabase = await createClient()
   // Note: On pourrait ajouter une vérif de droits ici aussi pour être puriste
