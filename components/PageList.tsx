@@ -20,22 +20,23 @@ import {
   ArrowUpNarrowWide,
   Plus,
   CornerDownRight,
-  Layers,
-  AlertCircle,
+  X,
   FileQuestion,
-  X
+  Pencil // <--- NOUVEL IMPORT
 } from 'lucide-react'
-import { deletePage, runPageSpeedAudit, getAuditDetails, createPagesBulk } from '@/app/actions'
+import { deletePage, runPageSpeedAudit, getAuditDetails, createPagesBulk, updatePageName } from '@/app/actions' // <--- IMPORT updatePageName
 import { toast } from "sonner"
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils' 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu"
 import {
   Sheet,
@@ -54,6 +55,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { AuditDetails } from '@/components/AuditDetails'
 
 // --- TYPES ---
@@ -78,7 +87,6 @@ interface Page {
   isOptimistic?: boolean 
 }
 
-// Pour le formulaire d'ajout multiple
 interface NewPageRow {
     id: string
     name: string
@@ -122,8 +130,10 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
   const [selectedAuditReport, setSelectedAuditReport] = useState<any>(null)
   const [isLoadingReport, setIsLoadingReport] = useState(false)
   const [pageToDelete, setPageToDelete] = useState<string | null>(null)
+  const [pageToRename, setPageToRename] = useState<Page | null>(null) // <--- ETAT RENOMMAGE
+  const [isRenaming, setIsRenaming] = useState(false)
 
-  // --- NOUVEAU : GESTION MULTI-LIGNES ---
+  // --- GESTION MULTI-LIGNES (AJOUT) ---
   const [rows, setRows] = useState<NewPageRow[]>([{ id: '1', name: '', url: '' }])
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -133,7 +143,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
 
   const handleRemoveRow = (id: string) => {
     if (rows.length === 1) {
-        setRows([{ id: '1', name: '', url: '' }]) // Reset si c'est la dernière
+        setRows([{ id: '1', name: '', url: '' }])
         return
     }
     setRows(prev => prev.filter(r => r.id !== id))
@@ -143,7 +153,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
     setRows(prev => prev.map(row => row.id === id ? { ...row, [field]: value } : row))
   }
 
-  // --- STATS CALCULÉES ---
   const totalPages = pages.length
   const errorPages = pages.filter(p => {
       const lastAudit = getLastAuditSafe(p.audits)
@@ -152,14 +161,36 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
 
   // --- ACTIONS ---
 
+  const handleRenameSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault()
+      if (!pageToRename) return
+
+      const formData = new FormData(e.currentTarget)
+      const newName = formData.get('name') as string
+
+      if (!newName.trim()) {
+          toast.error("Le nom ne peut pas être vide")
+          return
+      }
+
+      setIsRenaming(true)
+      const res = await updatePageName(formData)
+      setIsRenaming(false)
+
+      if (res.error) {
+          toast.error(res.error)
+      } else {
+          toast.success("Page renommée")
+          setPageToRename(null)
+          router.refresh()
+      }
+  }
+
   const handleBulkSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // 1. Filtrer les lignes vides
     const validRows = rows.filter(r => r.url.trim() !== '')
     if (validRows.length === 0) return
 
-    // 2. Préparer les données
     setIsSubmitting(true)
     const pagesToSubmit = validRows.map(row => {
         let finalUrl = row.url.trim()
@@ -176,7 +207,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
         }
     })
 
-    // 3. OPTIMISTIC UI : On ajoute tout de suite à la liste et ON VIDE le formulaire
     const tempPages: Page[] = pagesToSubmit.map((p, index) => ({
         id: `temp-${Date.now()}-${index}`,
         name: p.name,
@@ -187,10 +217,9 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
     }))
 
     setPages(prev => [...tempPages, ...prev])
-    setRows([{ id: Math.random().toString(), name: '', url: '' }]) // On reset le form direct !
-    setIsSubmitting(false) // On libère le bouton direct !
+    setRows([{ id: Math.random().toString(), name: '', url: '' }])
+    setIsSubmitting(false)
 
-    // 4. Appel Serveur (En tâche de fond pour l'UI)
     try {
         const formData = new FormData()
         formData.append('folderId', folderId)
@@ -202,7 +231,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
         router.refresh()
     } catch (error) {
         toast.error("Une erreur est survenue lors de l'ajout.")
-        // On retire les optimistics en cas d'erreur (optionnel, ou on laisse router.refresh gérer)
         setPages(prev => prev.filter(p => !p.isOptimistic))
     }
   }
@@ -274,7 +302,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
     <>
     <div className="space-y-6">
       
-      {/* 1. ZONE D'AJOUT RAPIDE (BATCH) */}
+      {/* 1. ZONE D'AJOUT RAPIDE */}
       <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-4">
          <div className="flex items-center justify-between">
              <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
@@ -316,7 +344,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                         />
                      </div>
                      
-                     {/* Bouton supprimer la ligne (sauf si c'est la seule et qu'elle est vide) */}
                      <Button 
                         type="button" 
                         variant="ghost" 
@@ -355,7 +382,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
          </form>
       </div>
 
-      {/* 2. BARRE D'OUTILS ET DE TRI (Inchangée) */}
+      {/* 2. BARRE D'OUTILS */}
       <div className="flex flex-col xl:flex-row gap-4 justify-between bg-white p-4 rounded-xl border border-gray-200 shadow-sm xl:items-center">
         <div className="relative w-full xl:max-w-xs">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
@@ -387,7 +414,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
         </div>
       </div>
 
-      {/* 3. LISTE DES RÉSULTATS (Avec état vide) */}
+      {/* 3. LISTE DES RÉSULTATS */}
       <div className="space-y-3">
         {filteredPages.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 bg-white border border-dashed border-gray-200 rounded-xl text-center">
@@ -414,7 +441,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                             </div>
                             <div className="text-xs text-gray-500 truncate">{page.url}</div>
                         </div>
-                        <div className="text-sm text-gray-400 italic pr-4 hidden sm:block">Analyse bientôt lancée...</div>
                     </div>
                 )
             }
@@ -431,7 +457,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                         ? "bg-red-50/40 border-red-200 hover:border-red-300 hover:bg-red-50" 
                         : "bg-white border-gray-200 hover:border-gray-300"
                 )}>
-                    {/* ... (LE RESTE DU RENDU DE LA CARTE EST IDENTIQUE À VOTRE CODE ACTUEL) ... */}
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-bold text-gray-900 truncate">{page.name}</h3>
@@ -448,6 +473,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
 
                     {hasAudit && !isError ? (
                         <div className="flex items-center gap-2 md:gap-6 shrink-0 overflow-x-auto pb-2 md:pb-0">
+                            {/* ... Scores Columns ... (Inchangés pour lisibilité) */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Monitor className="h-3 w-3" /> Desk</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_desktop_score)}`}>{lastAudit!.performance_desktop_score ?? '-'}</div>
@@ -489,6 +515,11 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-black"><MoreVertical className="h-4 w-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="bg-white">
+                                {/* MENU RENOMMER AJOUTÉ ICI */}
+                                <DropdownMenuItem onClick={() => setPageToRename(page)} className="cursor-pointer">
+                                    <Pencil className="h-4 w-4 mr-2 text-gray-500" /> Renommer
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => setPageToDelete(page.id)} className="text-red-600 cursor-pointer focus:text-red-600">
                                     <Trash2 className="h-4 w-4 mr-2" /> Supprimer
                                 </DropdownMenuItem>
@@ -501,7 +532,43 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
       </div>
     </div>
 
-    {/* SIDE PANEL & DIALOG (Inchangés) */}
+    {/* DIALOG RENOMMER (NOUVEAU) */}
+    <Dialog open={!!pageToRename} onOpenChange={(open) => !open && setPageToRename(null)}>
+        <DialogContent className="bg-white">
+            <DialogHeader>
+                <DialogTitle>Renommer la page</DialogTitle>
+                <DialogDescription>
+                    Changez le libellé de cette page pour le rendre plus explicite dans vos rapports.
+                </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleRenameSubmit} className="space-y-4">
+                <div className="space-y-2">
+                    <Label htmlFor="name">Nom de la page</Label>
+                    <Input 
+                        id="name" 
+                        name="name" 
+                        defaultValue={pageToRename?.name} 
+                        placeholder="Ex: Page Contact" 
+                        required 
+                    />
+                    <input type="hidden" name="pageId" value={pageToRename?.id || ''} />
+                    <input type="hidden" name="folderId" value={folderId} />
+                </div>
+                <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded border">
+                    <span className="font-semibold">URL : </span> {pageToRename?.url}
+                </div>
+                <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setPageToRename(null)}>Annuler</Button>
+                    <Button type="submit" disabled={isRenaming}>
+                        {isRenaming ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                        Enregistrer
+                    </Button>
+                </DialogFooter>
+            </form>
+        </DialogContent>
+    </Dialog>
+
+    {/* SIDE PANEL (Inchangé) */}
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent className="w-full sm:max-w-xl md:max-w-2xl overflow-y-auto p-0 bg-white">
             <SheetHeader className="p-6 pb-2 border-b border-gray-100">
@@ -523,6 +590,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
         </SheetContent>
     </Sheet>
 
+    {/* ALERT DELETE (Inchangé) */}
     <AlertDialog open={!!pageToDelete} onOpenChange={(open) => !open && setPageToDelete(null)}>
         <AlertDialogContent className="bg-white">
             <AlertDialogHeader>
