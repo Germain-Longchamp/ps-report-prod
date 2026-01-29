@@ -10,19 +10,14 @@ import {
   Activity,
   Globe,
   Search as SearchIcon,
-  Loader2,
   AlertOctagon, 
-  CheckCircle2,
   HeartPulse,
-  TrendingUp,
-  Info // <--- Import Info Icon
+  Info
 } from 'lucide-react'
 import { PageList } from '@/components/PageList'
 import { RunAuditButton } from '@/components/RunAuditButton'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { SiteSettingsDialog } from '@/components/SiteSettingsDialog'
-// --- NOUVEAUX IMPORTS POUR L'INFOBULLE ---
 import {
   Tooltip,
   TooltipContent,
@@ -84,25 +79,20 @@ export default async function Page({ params }: Props) {
 
   // --- 3. VÉRIFICATION LIVE DU ROOT URL ---
   let liveStatus = 0
-  
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 2500)
-    
     let targetUrl = folder.root_url
     if (!targetUrl.startsWith('http')) {
         targetUrl = `https://${targetUrl}`
     }
-    
     const res = await fetch(targetUrl, { 
         method: 'HEAD', 
         cache: 'no-store',
         signal: controller.signal
     })
-    
     clearTimeout(timeoutId)
     liveStatus = res.status
-
   } catch (error) {
     liveStatus = 0
   }
@@ -125,8 +115,7 @@ export default async function Page({ params }: Props) {
 
   if (pages.length > 0) {
       let totalWeightedScore = 0
-      let totalWeightDivisor = 0 // Nombre total de "points de poids" accumulés
-
+      
       const WEIGHTS = {
           PERF_MOBILE: 3,
           PERF_DESKTOP: 2,
@@ -134,9 +123,6 @@ export default async function Page({ params }: Props) {
           ACCESS: 1,
           BEST_PRACTICES: 1
       }
-
-      // Somme des poids pour une page parfaite (3+2+1+1+1 = 8)
-      const MAX_PAGE_WEIGHT = Object.values(WEIGHTS).reduce((a, b) => a + b, 0)
 
       pages.forEach((p: any) => {
           const pLastAudit = p.audits?.sort((a: any, b: any) => 
@@ -146,14 +132,7 @@ export default async function Page({ params }: Props) {
           if (pLastAudit) {
               analyzedPagesCount++
               
-              if (pLastAudit.status_code >= 400) {
-                  // Si erreur, on compte la page comme ayant contribué 0 points
-                  // Mais on l'ajoute au diviseur global comme si elle avait un poids plein (pour pénaliser la moyenne)
-                  // On simule que cette page "pèse" 1 dans la moyenne globale des pages
-                  // C'est un choix d'implémentation : soit on moyenne les métriques, soit on moyenne les pages.
-                  // Ici, pour simplifier et être juste : on calcule le score de CHAQUE page, puis on fait la moyenne des pages.
-              } else {
-                  // 1. Calculer le score de CETTE page
+              if (pLastAudit.status_code < 400) {
                   let currentScoreSum = 0
                   let currentWeightSum = 0
 
@@ -187,25 +166,26 @@ export default async function Page({ params }: Props) {
       })
 
       if (analyzedPagesCount > 0) {
-          // Moyenne simple des scores pondérés des pages
-          // (Total des notes de pages / Nombre de pages)
-          // Les pages en erreur ont ajouté 0 au numérateur mais +1 au dénominateur => Note chute.
           globalHealthScore = Math.round(totalWeightedScore / analyzedPagesCount)
       }
   }
 
-  const getScoreColor = (score: number) => {
-      if (score >= 90) return 'text-emerald-600 bg-emerald-50 border-emerald-100 ring-emerald-500/20'
-      if (score >= 60) return 'text-orange-600 bg-orange-50 border-orange-100 ring-orange-500/20'
-      return 'text-red-600 bg-red-50 border-red-100 ring-red-500/20'
+  // --- 5. LOGIQUE COULEURS & CHART ---
+  // Seuil OK passé à 80
+  const getScoreColorInfo = (score: number) => {
+      if (score >= 80) return { color: 'text-emerald-500', stroke: '#10b981', bg: 'bg-emerald-50', border: 'border-emerald-100' }
+      if (score >= 50) return { color: 'text-orange-500', stroke: '#f97316', bg: 'bg-orange-50', border: 'border-orange-100' }
+      return { color: 'text-red-500', stroke: '#ef4444', bg: 'bg-red-50', border: 'border-red-100' }
   }
 
-  const getGradient = (score: number | null) => {
-      if (score === null) return 'from-gray-50 to-white'
-      if (score >= 90) return 'from-emerald-50/50 to-white'
-      if (score >= 60) return 'from-orange-50/50 to-white'
-      return 'from-red-50/50 to-white'
-  }
+  // Calculs SVG pour le Donut Chart
+  const radius = 32
+  const circumference = 2 * Math.PI * radius
+  const strokeDashoffset = globalHealthScore !== null 
+    ? circumference - (globalHealthScore / 100) * circumference 
+    : circumference
+
+  const theme = globalHealthScore !== null ? getScoreColorInfo(globalHealthScore) : { color: 'text-gray-300', stroke: '#e5e7eb', bg: 'bg-white', border: 'border-gray-200' }
 
   return (
     <div className="relative min-h-screen bg-gray-50/30">
@@ -291,63 +271,84 @@ export default async function Page({ params }: Props) {
                   </div>
               </Card>
 
-              {/* 2. Carte Score Global (AVEC TOOLTIP) */}
-              <Card className={`border-gray-200 shadow-sm flex flex-col justify-between p-6 h-full transition-all bg-gradient-to-br ${getGradient(globalHealthScore)} hover:shadow-md group relative overflow-hidden overflow-visible`}>
-                  {/* Petit effet déco */}
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-gray-100 to-transparent rounded-bl-full opacity-50 pointer-events-none" />
-
-                  <div className="flex items-center justify-between mb-2 relative">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2.5 rounded-xl bg-white shadow-sm border border-gray-100 text-indigo-600 group-hover:scale-110 transition-transform">
-                            <HeartPulse className="h-5 w-5" />
+              {/* 2. Carte Score Global (CHART VERSION) */}
+              <Card className={`border shadow-sm flex flex-col p-6 h-full transition-all bg-white hover:shadow-md group relative overflow-visible ${theme.border}`}>
+                  
+                  <div className="flex items-center justify-between mb-4 relative z-10">
+                      <div className="flex items-center gap-2">
+                        <div className={`p-1.5 rounded-lg ${theme.bg} ${theme.color}`}>
+                            <HeartPulse className="h-4 w-4" />
                         </div>
-                        <span className="text-sm font-bold text-gray-700 uppercase tracking-tight">Qualité Globale</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Qualité Globale</span>
                       </div>
 
-                      {/* --- INFOBULLE --- */}
                       <TooltipProvider>
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Info className="h-4 w-4 text-gray-300 hover:text-indigo-600 transition-colors cursor-help" />
                             </TooltipTrigger>
                             <TooltipContent className="max-w-[250px] bg-slate-900 text-slate-50 border-slate-800 p-3 text-xs leading-relaxed shadow-xl">
-                                <p className="font-semibold mb-1">Calcul pondéré sur {analyzedPagesCount} page(s) :</p>
+                                <p className="font-semibold mb-1">Score pondéré sur {analyzedPagesCount} page(s) :</p>
                                 <ul className="list-disc list-inside space-y-0.5 text-slate-300">
-                                    <li>Performance Mobile <strong className="text-white">(x3)</strong></li>
-                                    <li>Performance Desktop <strong className="text-white">(x2)</strong></li>
-                                    <li>SEO & Autres <strong className="text-white">(x1)</strong></li>
+                                    <li>Mobile (x3)</li>
+                                    <li>Desktop (x2)</li>
+                                    <li>Autres (x1)</li>
                                 </ul>
-                                <p className="mt-2 text-red-300 italic">
-                                    Les pages en erreur (404/500) pénalisent fortement la moyenne.
-                                </p>
                             </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                   </div>
                   
-                  <div className="flex items-end gap-3 mt-2">
-                    {globalHealthScore !== null ? (
-                        <>
-                             <div className={`text-4xl font-extrabold px-3 py-1 rounded-lg border-2 ring-4 ${getScoreColor(globalHealthScore)} bg-white shadow-sm`}>
-                                {globalHealthScore}
-                             </div>
-                             <div className="flex flex-col mb-1">
-                                <span className="text-xs font-bold text-gray-400 uppercase">Score</span>
-                                <span className="text-xs text-gray-400">Pondéré</span>
-                             </div>
-                        </>
-                    ) : (
-                        <div className="text-3xl font-bold text-gray-300">--</div>
-                    )}
-                  </div>
-                  
-                  <div className="mt-4 flex items-center gap-1.5 text-xs font-medium text-gray-500">
-                     <TrendingUp className="h-3.5 w-3.5" />
-                     {analyzedPagesCount > 0 ? (
-                         <span>Basé sur {analyzedPagesCount} page{analyzedPagesCount > 1 ? 's' : ''}</span>
-                     ) : (
-                         <span>En attente d'audit...</span>
-                     )}
+                  {/* CHART VISUALIZATION */}
+                  <div className="flex-1 flex flex-col items-center justify-center py-2">
+                      <div className="relative flex items-center justify-center">
+                         {/* SVG Donut Chart */}
+                         <svg className="transform -rotate-90 w-24 h-24">
+                            {/* Background Circle */}
+                            <circle
+                                cx="48"
+                                cy="48"
+                                r={radius}
+                                stroke="currentColor"
+                                strokeWidth="8"
+                                fill="transparent"
+                                className="text-gray-100"
+                            />
+                            {/* Progress Circle */}
+                            {globalHealthScore !== null && (
+                                <circle
+                                    cx="48"
+                                    cy="48"
+                                    r={radius}
+                                    stroke={theme.stroke}
+                                    strokeWidth="8"
+                                    fill="transparent"
+                                    strokeDasharray={circumference}
+                                    strokeDashoffset={strokeDashoffset}
+                                    strokeLinecap="round"
+                                    className="transition-all duration-1000 ease-out"
+                                />
+                            )}
+                         </svg>
+                         
+                         {/* Score Text Centered */}
+                         <div className="absolute inset-0 flex flex-col items-center justify-center">
+                             {globalHealthScore !== null ? (
+                                <span className={`text-2xl font-extrabold ${theme.color}`}>
+                                    {globalHealthScore}
+                                </span>
+                             ) : (
+                                <span className="text-xl font-bold text-gray-300">--</span>
+                             )}
+                         </div>
+                      </div>
+                      
+                      <div className="mt-2 text-xs font-medium text-gray-400">
+                         {globalHealthScore !== null 
+                             ? (globalHealthScore >= 80 ? 'Excellent' : globalHealthScore >= 50 ? 'À améliorer' : 'Critique') 
+                             : 'En attente'
+                         }
+                      </div>
                   </div>
               </Card>
 
