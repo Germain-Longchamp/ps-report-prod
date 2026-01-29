@@ -198,17 +198,26 @@ export async function createFolder(formData: FormData) {
 
   if (!name || !rootUrl) return { error: "Nom et URL requis." }
 
-  // 1. Récupérer l'org active sécurisée
-  const { activeOrgId, error: authError } = await _getActiveOrgAndMember(supabase, user.id)
-  if (authError) return { error: authError }
+  // 1. Récupérer l'org active + LA CLÉ API pour l'audit
+  const cookieStore = await cookies()
+  const activeOrgId = Number(cookieStore.get('active_org_id')?.value)
+  
+  if (!activeOrgId) return { error: "Aucune organisation active." }
 
-  // 2. Insertion dans l'org active
-  const { data, error } = await supabase
+  // On récupère l'organisation pour avoir la clé API
+  const { data: orgData } = await supabase
+    .from('organizations')
+    .select('google_api_key')
+    .eq('id', activeOrgId)
+    .single()
+
+  // 2. Insertion du site
+  const { data: folder, error } = await supabase
     .from('folders')
     .insert({ 
         name, 
         root_url: rootUrl,
-        organization_id: activeOrgId, // <-- ICI : On force l'ID actif
+        organization_id: activeOrgId,
         created_by: user.id,
         status: 'active'
     })
@@ -220,8 +229,15 @@ export async function createFolder(formData: FormData) {
     return { error: "Impossible de créer le site." }
   }
 
+  // 3. LANCEMENT AUDIT IMMÉDIAT (Step 2 du parcours)
+  if (orgData?.google_api_key) {
+      // On lance l'audit en tâche de fond (sans await bloquant si on veut, 
+      // mais ici on await pour être sûr que la page suivante a des données)
+      await _performAudit(rootUrl, folder.id, orgData.google_api_key, null) 
+  }
+
   revalidatePath('/', 'layout') 
-  return { success: true, id: data.id }
+  return { success: true, id: folder.id }
 }
 
 export async function updateFolder(formData: FormData) {
