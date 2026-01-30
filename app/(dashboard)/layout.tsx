@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { DashboardSidebar } from '@/components/DashboardSidebar'
 import { cookies } from 'next/headers'
 import Link from 'next/link'
-import { AlertTriangle, ArrowRight, Key } from 'lucide-react' // Nouveaux imports
+import { AlertTriangle, ArrowRight, Key } from 'lucide-react'
 
 export default async function DashboardLayout({
   children,
@@ -36,8 +36,7 @@ export default async function DashboardLayout({
       activeOrgId = userOrgs[0]?.id
   }
 
-  // 4. CHECK API KEY (NOUVEAU)
-  // On vérifie spécifiquement si la clé API est présente pour l'organisation active
+  // 4. CHECK API KEY
   let isMissingApiKey = false
   if (activeOrgId) {
       const { data: currentOrg } = await supabase
@@ -46,7 +45,6 @@ export default async function DashboardLayout({
         .eq('id', activeOrgId)
         .single()
       
-      // Si pas de data ou clé vide/null
       if (!currentOrg || !currentOrg.google_api_key) {
           isMissingApiKey = true
       }
@@ -60,7 +58,6 @@ export default async function DashboardLayout({
         .order('name')
   ])
   
-  // Note: On passe 0 pour les incidents pour l'instant (optimisation)
   const incidentCount = 0 
 
   return (
@@ -74,11 +71,11 @@ export default async function DashboardLayout({
           activeOrgId={activeOrgId!}
       />
       
-      <main className="flex-1 md:ml-64 overflow-y-auto flex flex-col">
+      <main className="flex-1 md:ml-64 overflow-y-auto flex flex-col relative">
         
-        {/* BANDEAU D'ALERTE API KEY (NOUVEAU) */}
+        {/* BANDEAU D'ALERTE API KEY (FIXE AU SCROLL) */}
         {isMissingApiKey && (
-            <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-300">
+            <div className="sticky top-0 z-50 bg-amber-50 border-b border-amber-200 px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm animate-in slide-in-from-top-2 duration-300">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-amber-100 text-amber-700 rounded-full shrink-0">
                         <Key className="h-4 w-4" />
