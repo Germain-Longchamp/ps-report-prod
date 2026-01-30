@@ -1,7 +1,9 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
-import { DashboardSidebar } from '@/components/DashboardSidebar' // Attention au nom du composant
+import { DashboardSidebar } from '@/components/DashboardSidebar'
 import { cookies } from 'next/headers'
+import Link from 'next/link'
+import { AlertTriangle, ArrowRight, Key } from 'lucide-react' // Nouveaux imports
 
 export default async function DashboardLayout({
   children,
@@ -34,26 +36,31 @@ export default async function DashboardLayout({
       activeOrgId = userOrgs[0]?.id
   }
 
-  // 4. RECUPERER LES DONNÉES DE SIDEBAR (Folders & Incidents)
-  // Note: On le fait ici pour que la Sidebar soit toujours à jour, peu importe la page
-  const [foldersRes, incidentsRes] = await Promise.all([
-      // A. Les dossiers de l'org active
+  // 4. CHECK API KEY (NOUVEAU)
+  // On vérifie spécifiquement si la clé API est présente pour l'organisation active
+  let isMissingApiKey = false
+  if (activeOrgId) {
+      const { data: currentOrg } = await supabase
+        .from('organizations')
+        .select('google_api_key')
+        .eq('id', activeOrgId)
+        .single()
+      
+      // Si pas de data ou clé vide/null
+      if (!currentOrg || !currentOrg.google_api_key) {
+          isMissingApiKey = true
+      }
+  }
+
+  // 5. RECUPERER LES DONNÉES DE SIDEBAR
+  const [foldersRes] = await Promise.all([
       supabase.from('folders')
         .select('id, name')
         .eq('organization_id', activeOrgId)
-        .order('name'),
-      
-      // B. Calcul des incidents (rapide)
-      supabase.from('audits')
-        .select('status_code, folder_id, folders!inner(organization_id)')
-        .eq('folders.organization_id', activeOrgId)
-        .gte('status_code', 400) // On ne compte que les erreurs
-        // Note: C'est une approx rapide, pour un compte exact il faudrait dédoublonner par dernière date
-        // Mais pour un badge sidebar, ça suffit souvent ou on affinera.
+        .order('name')
   ])
   
-  // Pour un badge précis, on peut juste compter les folders en statut 'issues' si tu as ce champ
-  // Ou on passe juste 0 pour l'instant si c'est trop lourd à calculer dans le layout
+  // Note: On passe 0 pour les incidents pour l'instant (optimisation)
   const incidentCount = 0 
 
   return (
@@ -61,13 +68,39 @@ export default async function DashboardLayout({
       
       <DashboardSidebar 
           userEmail={user.email!} 
-          folders={foldersRes.data || []} // Liste des sites
+          folders={foldersRes.data || []}
           incidentCount={incidentCount}
-          organizations={userOrgs}      // Liste des orgs
-          activeOrgId={activeOrgId!}    // ID Actif
+          organizations={userOrgs}
+          activeOrgId={activeOrgId!}
       />
       
-      <main className="flex-1 md:ml-64 overflow-y-auto">
+      <main className="flex-1 md:ml-64 overflow-y-auto flex flex-col">
+        
+        {/* BANDEAU D'ALERTE API KEY (NOUVEAU) */}
+        {isMissingApiKey && (
+            <div className="bg-amber-50 border-b border-amber-200 px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in slide-in-from-top-2 duration-300">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-amber-100 text-amber-700 rounded-full shrink-0">
+                        <Key className="h-4 w-4" />
+                    </div>
+                    <div>
+                        <p className="text-sm font-bold text-amber-900">
+                            Configuration requise
+                        </p>
+                        <p className="text-sm text-amber-700 mt-0.5">
+                            Vous devez ajouter une clé API Google pour lancer les audits de performance.
+                        </p>
+                    </div>
+                </div>
+                <Link href="/settings">
+                    <button className="whitespace-nowrap flex items-center gap-2 text-xs font-semibold bg-amber-100 text-amber-800 px-4 py-2 rounded-lg hover:bg-amber-200 transition-colors border border-amber-200 shadow-sm">
+                        Configurer maintenant
+                        <ArrowRight className="h-3 w-3" />
+                    </button>
+                </Link>
+            </div>
+        )}
+
         {children}
       </main>
     </div>
