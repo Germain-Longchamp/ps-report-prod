@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { 
+  Folder, // <--- C'était l'import manquant !
   AlertOctagon, 
   Activity, 
   Globe, 
@@ -13,8 +14,8 @@ import {
   Plus, 
   BarChart3,
   Building2,
-  Lock, // Nouveau : pour le cadenas
-  Unlock // Nouveau : pour le cadenas ouvert (optionnel)
+  Lock, 
+  Unlock 
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cookies } from 'next/headers'
@@ -324,7 +325,7 @@ export default async function DashboardPage() {
         
       </div>
 
-      {/* SECTION SITES (FUSIONNÉE ET ENRICHIE) */}
+      {/* SECTION SITES */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
