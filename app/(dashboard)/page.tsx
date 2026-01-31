@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { 
-  Folder, 
   AlertOctagon, 
   Activity, 
   Globe, 
@@ -12,10 +11,10 @@ import {
   Server, 
   Layers, 
   Plus, 
-  ShieldCheck, 
-  ArrowRight,
   BarChart3,
-  Building2 // Nouvelle icône pour l'organisation
+  Building2,
+  Lock, // Nouveau : pour le cadenas
+  Unlock // Nouveau : pour le cadenas ouvert (optionnel)
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cookies } from 'next/headers'
@@ -82,14 +81,12 @@ export default async function DashboardPage() {
       .eq('organization_id', activeOrgId)
       .order('created_at', { ascending: false }),
     
-    // Scores détaillés pour le calcul de santé
     supabase.from('pages')
       .select('*, folders!inner(organization_id), audits(id, status_code, created_at, performance_score, performance_desktop_score, accessibility_score, best_practices_score, seo_score)')
       .eq('folders.organization_id', activeOrgId),
 
     supabase.from('profiles').select('first_name').eq('id', user.id).single(),
     
-    // NOUVEAU : Récupération du nom de l'organisation
     supabase.from('organizations').select('name').eq('id', activeOrgId).single()
   ])
 
@@ -118,9 +115,11 @@ export default async function DashboardPage() {
     BEST_PRACTICES: 1
   }
 
-  const folderMetricsMap: Record<string, { status: number | undefined, healthScore: number | null }> = {}
+  // Map pour stocker toutes les métriques (Santé + SSL + Pages)
+  const folderMetricsMap: Record<string, { status: number | undefined, healthScore: number | null, pageCount: number }> = {}
 
   folders.forEach(folder => {
+      // 4a. Statut HTTP
       const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
       let status = undefined
       if (lastAudit) {
@@ -128,7 +127,7 @@ export default async function DashboardPage() {
           if (hasError(folder.audits)) totalIncidents++
       }
 
-      // Calcul de la note de santé
+      // 4b. Calcul de la note de santé globale pondérée
       const sitePages = pages.filter(p => p.folder_id === folder.id)
       let healthScore: number | null = null
       
@@ -143,6 +142,8 @@ export default async function DashboardPage() {
 
              if (pLastAudit) {
                 analyzedPagesCount++
+                
+                // Si pas d'erreur critique (404/500), on calcule le score
                 if (pLastAudit.status_code < 400) {
                    let currentScoreSum = 0
                    let currentWeightSum = 0
@@ -181,38 +182,24 @@ export default async function DashboardPage() {
           }
       }
 
-      folderMetricsMap[folder.id] = { status, healthScore }
+      folderMetricsMap[folder.id] = { 
+          status, 
+          healthScore, 
+          pageCount: sitePages.length 
+      }
   })
 
+  // Vérification incidents sur les pages orphelines
   pages.forEach(page => {
       if (hasError(page.audits)) totalIncidents++
   })
 
-  // 5. CALCUL DES CERTIFICATS SSL (Top 5)
-  const upcomingExpirations = folders
-    .map(folder => {
-      const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
-      return {
-        id: folder.id,
-        name: folder.name,
-        root_url: folder.root_url,
-        ssl_expiry: lastAudit?.ssl_expiry_date,
-        days_left: lastAudit?.ssl_expiry_date 
-          ? Math.ceil((new Date(lastAudit.ssl_expiry_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) 
-          : null
-      }
-    })
-    .filter(item => item.ssl_expiry)
-    .sort((a, b) => (a.days_left || 9999) - (b.days_left || 9999))
-    .slice(0, 5)
-
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-10">
       
-      {/* HEADER REDESSINÉ */}
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
         <div className="space-y-3">
-            {/* Meta-barre avec l'Org et la Date */}
             <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 shadow-sm">
                     <Building2 className="h-3.5 w-3.5" />
@@ -225,13 +212,11 @@ export default async function DashboardPage() {
                 </div>
             </div>
 
-            {/* Titre réduit en taille */}
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
                 {greeting}, <span className="text-gray-600 font-normal">{userName}</span>
             </h1>
         </div>
         
-        {/* Status Badge */}
         <div className={`hidden md:flex items-center gap-4 text-sm font-medium px-4 py-2 rounded-full border shadow-sm transition-colors
             ${totalIncidents === 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-red-50 border-red-100 text-red-700'}
         `}>
@@ -249,7 +234,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI CARDS (avec style amélioré) */}
+      {/* KPI CARDS */}
       <div className="grid gap-6 md:grid-cols-3">
         
         <Card className="relative overflow-hidden border-blue-100 bg-gradient-to-br from-white to-blue-50/50 shadow-sm hover:shadow-md transition-all group">
@@ -268,7 +253,6 @@ export default async function DashboardPage() {
                     Projets monitorés
                 </div>
             </CardContent>
-            {/* Effet décoratif */}
             <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-blue-100/50 blur-2xl group-hover:bg-blue-200/50 pointer-events-none" />
         </Card>
 
@@ -340,12 +324,12 @@ export default async function DashboardPage() {
         
       </div>
 
-      {/* STATUTS SYSTÈMES */}
+      {/* SECTION SITES (FUSIONNÉE ET ENRICHIE) */}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                 <Activity className="h-5 w-5 text-gray-400" />
-                Statuts Systèmes
+                Vos Sites
             </h2>
             
             <CreateSiteModal>
@@ -356,24 +340,32 @@ export default async function DashboardPage() {
             </CreateSiteModal>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {folders.length > 0 ? (
              folders.map((folder) => {
                 const metrics = folderMetricsMap[folder.id]
                 const status = metrics?.status
                 const healthScore = metrics?.healthScore
+                const pageCount = metrics?.pageCount || 0
 
                 const hasAudit = status !== undefined
                 const isOnline = hasAudit && (status >= 200 && status < 400)
 
+                // 1. Logique Score Santé (Vert si >= 80)
                 let scoreColor = "text-gray-600 bg-gray-100 border-gray-200"
                 if (healthScore !== null) {
-                    if (healthScore >= 90) scoreColor = "text-emerald-700 bg-emerald-50 border-emerald-200"
+                    if (healthScore >= 80) scoreColor = "text-emerald-700 bg-emerald-50 border-emerald-200"
                     else if (healthScore >= 60) scoreColor = "text-orange-700 bg-orange-50 border-orange-200"
                     else scoreColor = "text-red-700 bg-red-50 border-red-200"
                 }
 
-                // STYLE CARD AMÉLIORÉ : Dégradé + Lift
+                // 2. Logique SSL
+                const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+                const sslExpiry = lastAudit?.ssl_expiry_date ? new Date(lastAudit.ssl_expiry_date) : null
+                const sslDaysLeft = sslExpiry ? Math.ceil((sslExpiry.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : null
+                const isSslOk = sslDaysLeft !== null && sslDaysLeft > 30 // Warning si < 30 jours
+
+                // Style Card
                 const cardStyle = hasAudit 
                     ? (isOnline 
                         ? 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:to-white hover:border-emerald-400' 
@@ -383,50 +375,68 @@ export default async function DashboardPage() {
                 return (
                     <Link key={folder.id} href={`/site/${folder.id}`} className="group block h-full">
                         <Card className={`h-full border transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer ${cardStyle}`}>
-                            <CardContent className="p-5 flex items-start gap-4">
-                                <div className={`shrink-0 mt-1 h-3 w-3 rounded-full shadow-sm ring-4 transition-all duration-500
-                                    ${hasAudit 
-                                        ? (isOnline ? 'bg-emerald-500 ring-emerald-100 group-hover:ring-emerald-200' : 'bg-red-500 ring-red-100 animate-pulse') 
-                                        : 'bg-gray-300 ring-gray-100'
-                                    }
-                                `} />
-
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <h3 className="font-bold text-gray-900 truncate text-sm">{folder.name}</h3>
-                                        
-                                        {healthScore !== null && (
-                                            <Badge variant="outline" className={`text-[10px] h-5 px-1.5 font-bold flex items-center gap-1 ${scoreColor}`}>
-                                                <BarChart3 className="h-3 w-3" />
-                                                {healthScore}
-                                            </Badge>
-                                        )}
-                                    </div>
-                                    
-                                    <div className="text-xs text-gray-500 truncate flex items-center gap-1 group-hover:text-blue-600 transition-colors">
-                                        <Globe className="h-2.5 w-2.5" />
-                                        {folder.root_url}
-                                    </div>
-
-                                    <div className={`text-[10px] font-medium mt-3 flex items-center justify-between
+                            <CardContent className="p-5 flex flex-col gap-4">
+                                
+                                {/* Ligne 1 : Statut Visuel + Nom + Score */}
+                                <div className="flex items-start gap-3">
+                                    <div className={`shrink-0 mt-1 h-3 w-3 rounded-full shadow-sm ring-4 transition-all duration-500
                                         ${hasAudit 
-                                            ? (isOnline ? 'text-emerald-600' : 'text-red-600') 
-                                            : 'text-gray-400'
+                                            ? (isOnline ? 'bg-emerald-500 ring-emerald-100 group-hover:ring-emerald-200' : 'bg-red-500 ring-red-100 animate-pulse') 
+                                            : 'bg-gray-300 ring-gray-100'
                                         }
-                                    `}>
-                                        <span>
-                                            {hasAudit 
-                                                ? (isOnline ? "Opérationnel" : "Service perturbé") 
-                                                : "En attente..."
-                                            }
-                                        </span>
-                                        {hasAudit && (
-                                            <span className="font-mono text-gray-400 opacity-70">
-                                                {status === 0 ? 'ERR' : status}
-                                            </span>
-                                        )}
+                                    `} />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <h3 className="font-bold text-gray-900 truncate text-sm">{folder.name}</h3>
+                                            {healthScore !== null && (
+                                                <Badge variant="outline" className={`text-[10px] h-5 px-1.5 font-bold flex items-center gap-1 ${scoreColor}`}>
+                                                    <BarChart3 className="h-3 w-3" />
+                                                    {healthScore}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <div className="text-xs text-gray-500 truncate flex items-center gap-1 group-hover:text-blue-600 transition-colors">
+                                            <Globe className="h-2.5 w-2.5" />
+                                            {folder.root_url}
+                                        </div>
                                     </div>
                                 </div>
+
+                                {/* Séparateur léger */}
+                                <div className="h-px bg-gray-100 w-full" />
+
+                                {/* Ligne 2 : Infos Techniques (SSL + Pages) */}
+                                <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
+                                    
+                                    {/* Bloc SSL */}
+                                    <div className="flex items-center gap-1.5" title={sslExpiry ? `Expire le ${sslExpiry.toLocaleDateString()}` : "Pas d'info SSL"}>
+                                        {sslDaysLeft !== null ? (
+                                            <>
+                                                {isSslOk ? (
+                                                    <Lock className="h-3.5 w-3.5 text-emerald-500" />
+                                                ) : (
+                                                    <Lock className="h-3.5 w-3.5 text-red-500" />
+                                                )}
+                                                <span className={!isSslOk ? "text-red-600 font-bold" : ""}>
+                                                    J-{sslDaysLeft}
+                                                </span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Unlock className="h-3.5 w-3.5 text-gray-300" />
+                                                <span className="text-gray-400">SSL --</span>
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {/* Bloc Pages */}
+                                    <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-md border border-gray-100">
+                                        <Layers className="h-3.5 w-3.5 text-gray-400" />
+                                        <span>{pageCount} page{pageCount > 1 ? 's' : ''}</span>
+                                    </div>
+
+                                </div>
+
                             </CardContent>
                         </Card>
                     </Link>
@@ -443,61 +453,6 @@ export default async function DashboardPage() {
                 </p>
              </div>
           )}
-        </div>
-      </div>
-
-      {/* SECTION SSL */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-gray-400" />
-                Certificats SSL
-            </h2>
-            <Link href="/ssl">
-                <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-                    Voir tout <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-            </Link>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {upcomingExpirations.length > 0 ? (
-                upcomingExpirations.map((site) => {
-                    const daysLeft = site.days_left || 0
-                    let statusColor = "bg-emerald-100 text-emerald-800 border-emerald-200"
-                    if (daysLeft < 7) statusColor = "bg-red-100 text-red-800 border-red-200 animate-pulse"
-                    else if (daysLeft < 30) statusColor = "bg-orange-100 text-orange-800 border-orange-200"
-
-                    // Style Card avec dégradé subtil
-                    return (
-                        <Card key={site.id} className="border-gray-200 bg-gradient-to-br from-white to-gray-50/50 shadow-sm hover:shadow-md hover:to-white hover:-translate-y-0.5 transition-all cursor-default">
-                            <CardContent className="p-4">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div className="font-semibold text-gray-900 truncate max-w-[120px]" title={site.name}>
-                                        {site.name}
-                                    </div>
-                                    <Badge variant="outline" className={`${statusColor} text-[10px] px-1.5`}>
-                                        J-{daysLeft}
-                                    </Badge>
-                                </div>
-                                <div className="text-xs text-gray-500 truncate mb-3">
-                                    {site.root_url}
-                                </div>
-                                <div className="text-xs font-medium text-gray-400 flex items-center gap-1">
-                                    Expire le : 
-                                    <span className="text-gray-700">
-                                        {new Date(site.ssl_expiry).toLocaleDateString('fr-FR')}
-                                    </span>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )
-                })
-            ) : (
-                <div className="col-span-full py-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200 text-gray-500 text-sm">
-                    Aucune donnée SSL disponible pour le moment.
-                </div>
-            )}
         </div>
       </div>
 
