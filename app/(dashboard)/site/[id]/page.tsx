@@ -52,18 +52,18 @@ export default async function Page({ params }: Props) {
       activeOrgId = validOrgIds[0]
   }
 
-  // 2. Data Fetching
-  // MODIFICATION ICI : On récupère aussi les audits DU DOSSIER (Root URL)
-  const { data: folder } = await supabase
+  // 2. Data Fetching (OPTIMISÉ & SÉCURISÉ)
+  // On évite le SELECT * qui peut être lourd et on cible les colonnes
+  const { data: folder, error } = await supabase
     .from('folders')
     .select(`
-        *, 
+        id, name, root_url, organization_id, created_at,
         audits (
             id, created_at, status_code, https_valid, ssl_expiry_date, 
-            seo_score, screenshot, report_json
+            seo_score, screenshot
         ),
         pages (
-            *,
+            id, name, url, folder_id, created_at,
             audits (
                 id, created_at, status_code, ttfb,
                 performance_score, performance_desktop_score,
@@ -75,25 +75,28 @@ export default async function Page({ params }: Props) {
     .eq('organization_id', activeOrgId)
     .single()
 
-  if (!folder) redirect('/')
+  // Gestion d'erreur explicite pour éviter la redirection silencieuse
+  if (error || !folder) {
+      console.error("Erreur chargement page site:", error)
+      redirect('/')
+  }
 
   const pages = folder.pages || []
 
-  // --- 3. RÉCUPÉRATION DES DONNÉES RACINE (Depuis la DB uniquement) ---
-  // On prend le dernier audit lié directement au folder (pas aux pages)
+  // --- 3. DONNÉES RACINE (RAPIDE - VIA BDD) ---
+  // On prend le dernier audit disponible en base pour l'état.
+  // C'est instantané car pas d'appel réseau externe.
   const lastRootAudit = folder.audits?.sort((a: any, b: any) => 
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )[0]
 
-  // Données figées en base (Mises à jour uniquement via RunAuditButton)
   const liveStatus = lastRootAudit?.status_code || 0
   const isSiteUp = liveStatus >= 200 && liveStatus < 400
-  const isSSLValid = lastRootAudit?.https_valid ?? false // Valeur DB
+  const isSSLValid = lastRootAudit?.https_valid ?? false
   const isIndexable = lastRootAudit ? (lastRootAudit.seo_score || 0) > 50 : false
   const screenshotUrl = lastRootAudit?.screenshot
 
-  // --- 4. CALCUL DU SCORE GLOBAL PONDÉRÉ (Basé sur les SOUS-PAGES) ---
-  // Reste inchangé : on calcule la moyenne des sous-pages pour la "Qualité Globale"
+  // --- 4. CALCUL DU SCORE GLOBAL PONDÉRÉ ---
   let globalHealthScore: number | null = null
   let analyzedPagesCount = 0
 
@@ -109,12 +112,15 @@ export default async function Page({ params }: Props) {
       }
 
       pages.forEach((p: any) => {
+          // Tri côté JS pour être sûr d'avoir le dernier (optimisation possible côté SQL plus tard)
           const pLastAudit = p.audits?.sort((a: any, b: any) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           )[0]
 
           if (pLastAudit) {
               analyzedPagesCount++
+              
+              // On ne calcule le score que si la page n'est pas en erreur technique (404/500)
               if (pLastAudit.status_code < 400) {
                   let currentScoreSum = 0
                   let currentWeightSum = 0
@@ -153,7 +159,7 @@ export default async function Page({ params }: Props) {
       }
   }
 
-  // --- 5. LOGIQUE COULEURS & CHART ---
+  // --- 5. LOGIQUE UI ---
   const getScoreColorInfo = (score: number) => {
       if (score >= 80) return { color: 'text-emerald-500', stroke: '#10b981', bg: 'bg-emerald-50', border: 'border-emerald-100' }
       if (score >= 50) return { color: 'text-orange-500', stroke: '#f97316', bg: 'bg-orange-50', border: 'border-orange-100' }
@@ -170,7 +176,7 @@ export default async function Page({ params }: Props) {
 
   return (
     <div className="relative min-h-screen bg-gray-50/30">
-      <div className="p-10 w-full max-w-7xl mx-auto space-y-12 pb-32">
+      <div className="p-8 w-full max-w-7xl mx-auto space-y-12 pb-32">
         
         {/* HEADER */}
         <header className="flex flex-col md:flex-row md:items-start justify-between gap-6">
@@ -218,7 +224,7 @@ export default async function Page({ params }: Props) {
           <h2 className="text-xl font-semibold text-gray-900">Santé du site</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               
-              {/* 1. Carte Status (BASÉE SUR AUDIT BDD) */}
+              {/* 1. Carte Status */}
               <Card className={`border-0 shadow-sm flex flex-col justify-between p-6 h-full relative overflow-hidden transition-all duration-300
                   ${isSiteUp ? 'bg-emerald-600 text-white shadow-emerald-200' : (lastRootAudit ? 'bg-red-600 text-white shadow-red-200' : 'bg-gray-100 text-gray-500')}
               `}>
@@ -230,9 +236,7 @@ export default async function Page({ params }: Props) {
                             Service
                           </span>
                           <div className="text-xl font-bold flex items-center gap-2">
-                             {lastRootAudit 
-                                ? (isSiteUp ? "En Ligne" : "Hors Ligne") 
-                                : "En attente"}
+                             {lastRootAudit ? (isSiteUp ? "En Ligne" : "Hors Ligne") : "En attente"}
                           </div>
                       </div>
                       <div className="relative flex h-3 w-3 mt-1.5">
@@ -254,7 +258,7 @@ export default async function Page({ params }: Props) {
                   </div>
               </Card>
 
-              {/* 2. Carte Score Global (BASÉE SUR SOUS-PAGES) */}
+              {/* 2. Carte Score Global */}
               <Card className={`border shadow-sm flex flex-col p-6 h-full transition-all bg-white hover:shadow-md group relative overflow-visible ${theme.border}`}>
                   
                   <div className="flex items-center justify-between mb-4 relative z-10">
@@ -307,7 +311,7 @@ export default async function Page({ params }: Props) {
                   </div>
               </Card>
 
-              {/* 3. Carte SSL (BASÉE SUR AUDIT BDD) */}
+              {/* 3. Carte SSL */}
               <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full hover:border-gray-300 transition-colors bg-white">
                   <div className="flex items-center gap-3 mb-2">
                       <div className={`p-2 rounded-lg ${isSSLValid ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
@@ -323,7 +327,7 @@ export default async function Page({ params }: Props) {
                   </p>
               </Card>
 
-              {/* 4. Carte Indexation (BASÉE SUR AUDIT BDD) */}
+              {/* 4. Carte Indexation */}
               <Card className="border-gray-200 shadow-sm flex flex-col justify-center p-6 h-full hover:border-gray-300 transition-colors bg-white">
                   <div className="flex items-center gap-3 mb-2">
                       <div className={`p-2 rounded-lg ${isIndexable ? 'bg-purple-50 text-purple-600' : 'bg-orange-50 text-orange-600'}`}>
