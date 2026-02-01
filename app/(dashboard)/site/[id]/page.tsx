@@ -14,7 +14,6 @@ import {
   Info
 } from 'lucide-react'
 import { PageList } from '@/components/PageList'
-import { RunAuditButton } from '@/components/RunAuditButton'
 import { Card } from '@/components/ui/card'
 import { SiteSettingsDialog } from '@/components/SiteSettingsDialog'
 import {
@@ -350,7 +349,6 @@ export default async function Page({ params }: Props) {
         </section>
 
       </div>
-      <RunAuditButton folderId={folder.id} />
     </div>
   )
 }
