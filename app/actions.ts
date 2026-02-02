@@ -179,7 +179,7 @@ export async function createFolder(formData: FormData) {
 
   if (!name || !rootUrl) return { error: "Nom et URL requis." }
 
-  // 1. Nettoyage URL (Critique pour éviter erreur 500 Google)
+  // 1. Nettoyage URL
   rootUrl = rootUrl.trim()
   if (!rootUrl.startsWith('http')) {
       rootUrl = `https://${rootUrl}`
@@ -214,13 +214,11 @@ export async function createFolder(formData: FormData) {
     return { error: "Impossible de créer le site." }
   }
 
-  // 4. LANCEMENT AUDIT SÉCURISÉ (Try/Catch pour ne jamais bloquer la création)
+  // 4. LANCEMENT AUDIT IMMÉDIAT
   try {
-      // On tente avec la clé si elle existe, sinon NULL (mode sans clé)
       const apiKey = orgData?.google_api_key || null
-      await _performAudit(rootUrl, folder.id, apiKey, null)
+      await _performAudit(rootUrl, folder.id, apiKey, null) 
   } catch (auditError) {
-      // On log juste l'erreur, mais on laisse le site se créer pour ne pas bloquer l'user
       console.error("Warning: Audit initial échoué mais site créé.", auditError)
   }
 
@@ -336,7 +334,6 @@ export async function createPage(formData: FormData) {
 
   if (error || !newPage) return { error: "Erreur ajout page" }
 
-  // Audit permissif (null si pas de clé)
   // @ts-ignore
   const apiKey = folder?.organizations?.google_api_key || null
   try {
@@ -443,8 +440,7 @@ export async function createPagesBulk(formData: FormData) {
   const auditPromises = newPages.map(page => 
       _performAudit(page.url, folderId, apiKey, page.id)
   )
-  // On n'attend pas forcément tout pour éviter le timeout si beaucoup de pages
-  // Mais pour un petit nombre c'est OK
+  
   try {
       await Promise.all(auditPromises)
   } catch (e) {
@@ -479,7 +475,7 @@ export async function updateProfile(formData: FormData) {
   return { success: "Profil mis à jour" }
 }
 
-// --- 5. MOTEUR D'AUDIT (ROBUSTE) ---
+// --- 5. MOTEUR D'AUDIT (CORRIGÉ & ROBUSTE) ---
 
 function getSSLExpiry(targetUrl: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -509,7 +505,6 @@ function getSSLExpiry(targetUrl: string): Promise<string | null> {
   })
 }
 
-// MODIFICATION CRITIQUE : apiKey peut être null
 async function _performAudit(url: string, folderId: string, apiKey: string | null, pageId: string | null = null) {
   const supabase = await createClient()
   
@@ -526,17 +521,13 @@ async function _performAudit(url: string, folderId: string, apiKey: string | nul
     realStatusCode = 0 
   }
 
-  // Construction dynamique : si pas de clé, on utilise l'API publique (quotas réduits mais ça marche)
   let baseUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&category=performance&category=accessibility&category=best-practices&category=seo`
-  
-  if (apiKey) {
-      baseUrl += `&key=${apiKey}`
-  }
+  if (apiKey) baseUrl += `&key=${apiKey}`
 
   try {
-    // Timeout manuel pour éviter le "spin" infini
+    // MODIF: Timeout augmenté à 60s pour éviter AbortError
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 20000) // 20s max
+    const timeoutId = setTimeout(() => controller.abort(), 60000) 
 
     const [mobileRes, desktopRes, sslDate] = await Promise.all([
       fetch(`${baseUrl}&strategy=mobile`, { cache: 'no-store', signal: controller.signal }),
@@ -550,16 +541,14 @@ async function _performAudit(url: string, folderId: string, apiKey: string | nul
 
     if (mobileData.error || desktopData.error) {
         console.error("Lighthouse API Error:", mobileData.error || desktopData.error)
-        
         const finalCode = realStatusCode !== 0 ? realStatusCode : 500
-        // On enregistre l'erreur en base pour que l'UI ne soit pas vide
         await supabase.from('audits').insert({
             folder_id: folderId,
             page_id: pageId,
             url: url,
             status_code: finalCode,
             https_valid: false,
-            report_json: mobileData.error || desktopData.error
+            report_json: mobileData.error || desktopData.error || { error: "Unknown API error" }
         })
         return { success: true, statusCode: finalCode } 
     }
@@ -599,84 +588,22 @@ async function _performAudit(url: string, folderId: string, apiKey: string | nul
 
     return { success: true, statusCode: realStatusCode }
 
-  } catch (err) {
-    console.error(`Crash audit catch ${url}:`, err)
+  } catch (err: any) {
+    console.error(`Audit error ${url}:`, err)
     
-    // IMPORTANT: On insère une ligne d'erreur pour dire "ça a planté" plutôt que rien
+    const errorMsg = err.name === 'AbortError' ? "Timeout audit (>60s)" : "Crash serveur ou API"
+    
+    // On log l'erreur pour ne pas bloquer l'UI
     await supabase.from('audits').insert({
         folder_id: folderId,
         page_id: pageId,
         url: url,
         status_code: 0,
-        report_json: { error: "Crash serveur ou timeout audit" }
+        report_json: { error: errorMsg }
     })
     
     return { error: "Erreur technique." }
   }
-}
-
-export async function runPageSpeedAudit(url: string, folderId: string, pageId?: string) {
-  const supabase = await createClient()
-  
-  const { data: folder } = await supabase
-    .from('folders')
-    .select('organization_id, organizations(google_api_key)')
-    .eq('id', folderId)
-    .single()
-
-  // @ts-ignore
-  const apiKey = folder?.organizations?.google_api_key || null
-  
-  const result = await _performAudit(url, folderId, apiKey, pageId || null)
-  
-  if (!pageId && result.success) {
-      const newStatus = (result.statusCode && result.statusCode >= 400) ? 'issues' : 'active'
-      await supabase.from('folders').update({ status: newStatus }).eq('id', folderId)
-  }
-
-  revalidatePath(`/site/${folderId}`)
-  revalidatePath('/')
-  return result
-}
-
-export async function runGlobalAudit(folderId: string) {
-  const supabase = await createClient()
-
-  const { data: folder } = await supabase
-    .from('folders')
-    .select(`*, organizations (google_api_key), pages (*)`)
-    .eq('id', folderId)
-    .single()
-
-  if (!folder) return { error: "Dossier introuvable" }
-
-  // @ts-ignore
-  const apiKey = folder.organizations?.google_api_key || null
-  
-  const tasks = []
-  tasks.push(_performAudit(folder.root_url, folder.id, apiKey, null))
-
-  if (folder.pages && folder.pages.length > 0) {
-    folder.pages.forEach((p: any) => {
-        tasks.push(_performAudit(p.url, folder.id, apiKey, p.id))
-    })
-  }
-
-  try {
-    await Promise.all(tasks)
-    revalidatePath(`/site/${folderId}`)
-    revalidatePath('/')
-    return { success: `Analyse terminée sur ${tasks.length} URL(s).` }
-  } catch (e) {
-    return { error: "Erreur lors de l'analyse globale." }
-  }
-}
-
-export async function getAuditDetails(auditId: string) {
-  const supabase = await createClient()
-  const { data, error } = await supabase.from('audits').select('report_json').eq('id', auditId).single()
-  if (error || !data) return { error: "Rapport introuvable" }
-  return { report: data.report_json }
 }
 
 // --- 5. GESTION DES MEMBRES ---
