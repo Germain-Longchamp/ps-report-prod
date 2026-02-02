@@ -606,6 +606,38 @@ async function _performAudit(url: string, folderId: string, apiKey: string | nul
   }
 }
 
+// FONCTION RENOMMÉE POUR FORCER LE REBUILD (Anciennement runPageSpeedAudit)
+export async function forceRunPageSpeedAudit(url: string, folderId: string, pageId?: string) {
+  const supabase = await createClient()
+  
+  const { data: folder } = await supabase
+    .from('folders')
+    .select('organization_id, organizations(google_api_key)')
+    .eq('id', folderId)
+    .single()
+
+  // @ts-ignore
+  const apiKey = folder?.organizations?.google_api_key || null
+  
+  const result = await _performAudit(url, folderId, apiKey, pageId || null)
+  
+  if (!pageId && result.success) {
+      const newStatus = (result.statusCode && result.statusCode >= 400) ? 'issues' : 'active'
+      await supabase.from('folders').update({ status: newStatus }).eq('id', folderId)
+  }
+
+  revalidatePath(`/site/${folderId}`)
+  revalidatePath('/')
+  return result
+}
+
+export async function getAuditDetails(auditId: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase.from('audits').select('report_json').eq('id', auditId).single()
+  if (error || !data) return { error: "Rapport introuvable" }
+  return { report: data.report_json }
+}
+
 // --- 5. GESTION DES MEMBRES ---
 
 export async function inviteMember(formData: FormData) {
