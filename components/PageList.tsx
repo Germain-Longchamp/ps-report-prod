@@ -10,8 +10,8 @@ import {
   ExternalLink,
   Trash2,
   MoreVertical,
-  Play,       
-  FileText,   
+  Play,        
+  FileText,    
   Timer,
   Loader2,
   Accessibility,
@@ -22,9 +22,10 @@ import {
   CornerDownRight,
   X,
   FileQuestion,
-  Pencil // <--- NOUVEL IMPORT
+  Pencil
 } from 'lucide-react'
-import { deletePage, runPageSpeedAudit, getAuditDetails, createPagesBulk, updatePageName } from '@/app/actions' // <--- IMPORT updatePageName
+// MODIFICATION ICI : On importe la fonction renommée
+import { deletePage, forceRunPageSpeedAudit, getAuditDetails, createPagesBulk, updatePageName } from '@/app/actions'
 import { toast } from "sonner"
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -130,7 +131,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
   const [selectedAuditReport, setSelectedAuditReport] = useState<any>(null)
   const [isLoadingReport, setIsLoadingReport] = useState(false)
   const [pageToDelete, setPageToDelete] = useState<string | null>(null)
-  const [pageToRename, setPageToRename] = useState<Page | null>(null) // <--- ETAT RENOMMAGE
+  const [pageToRename, setPageToRename] = useState<Page | null>(null)
   const [isRenaming, setIsRenaming] = useState(false)
 
   // --- GESTION MULTI-LIGNES (AJOUT) ---
@@ -250,7 +251,8 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
   const handleRunAudit = async (url: string, pageId: string) => {
     setRunningAuditId(pageId)
     toast.info("Audit lancé...")
-    const res = await runPageSpeedAudit(url, folderId, pageId)
+    // MODIFICATION ICI : Appel de la fonction renommée
+    const res = await forceRunPageSpeedAudit(url, folderId, pageId)
     setRunningAuditId(null)
     if (res.error) toast.error(res.error)
     else {
@@ -473,7 +475,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
 
                     {hasAudit && !isError ? (
                         <div className="flex items-center gap-2 md:gap-6 shrink-0 overflow-x-auto pb-2 md:pb-0">
-                            {/* ... Scores Columns ... (Inchangés pour lisibilité) */}
+                            {/* ... Scores Columns ... */}
                             <div className="flex flex-col items-center min-w-[60px]">
                                 <span className="text-[10px] text-gray-400 uppercase font-bold mb-1 flex items-center gap-1"><Monitor className="h-3 w-3" /> Desk</span>
                                 <div className={`text-sm font-bold px-2 py-0.5 rounded border ${getScoreColor(lastAudit!.performance_desktop_score)}`}>{lastAudit!.performance_desktop_score ?? '-'}</div>
@@ -515,7 +517,6 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-black"><MoreVertical className="h-4 w-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="bg-white">
-                                {/* MENU RENOMMER AJOUTÉ ICI */}
                                 <DropdownMenuItem onClick={() => setPageToRename(page)} className="cursor-pointer">
                                     <Pencil className="h-4 w-4 mr-2 text-gray-500" /> Renommer
                                 </DropdownMenuItem>
@@ -532,7 +533,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
       </div>
     </div>
 
-    {/* DIALOG RENOMMER (NOUVEAU) */}
+    {/* DIALOG RENOMMER */}
     <Dialog open={!!pageToRename} onOpenChange={(open) => !open && setPageToRename(null)}>
         <DialogContent className="bg-white">
             <DialogHeader>
@@ -568,7 +569,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
         </DialogContent>
     </Dialog>
 
-    {/* SIDE PANEL (Inchangé) */}
+    {/* SIDE PANEL */}
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
         <SheetContent className="w-full sm:max-w-xl md:max-w-2xl overflow-y-auto p-0 bg-white">
             <SheetHeader className="p-6 pb-2 border-b border-gray-100">
@@ -590,7 +591,7 @@ export function PageList({ initialPages, folderId, rootUrl }: { initialPages: an
         </SheetContent>
     </Sheet>
 
-    {/* ALERT DELETE (Inchangé) */}
+    {/* ALERT DELETE */}
     <AlertDialog open={!!pageToDelete} onOpenChange={(open) => !open && setPageToDelete(null)}>
         <AlertDialogContent className="bg-white">
             <AlertDialogHeader>
