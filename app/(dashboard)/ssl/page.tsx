@@ -1,7 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import { ShieldCheck } from 'lucide-react'
-// ON REMPLACE L'ANCIEN IMPORT PAR LE NOUVEAU TABLEAU
 import { SSLCertificateTable } from '@/components/SSLCertificateTable'
 import { cookies } from 'next/headers'
 
@@ -63,7 +62,8 @@ export default async function SSLPage() {
   }).filter(Boolean) as any[]
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
+    // MODIFICATION ICI : 'w-full' au lieu de 'max-w-7xl' pour utiliser toute la largeur
+    <div className="p-8 w-full space-y-8">
       
       {/* HEADER */}
       <div className="flex flex-col gap-2">
