@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { 
-  Folder, // <--- C'était l'import manquant !
+  Folder,
   AlertOctagon, 
   Activity, 
   Globe, 
@@ -116,11 +116,9 @@ export default async function DashboardPage() {
     BEST_PRACTICES: 1
   }
 
-  // Map pour stocker toutes les métriques (Santé + SSL + Pages)
   const folderMetricsMap: Record<string, { status: number | undefined, healthScore: number | null, pageCount: number }> = {}
 
   folders.forEach(folder => {
-      // 4a. Statut HTTP
       const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
       let status = undefined
       if (lastAudit) {
@@ -128,7 +126,6 @@ export default async function DashboardPage() {
           if (hasError(folder.audits)) totalIncidents++
       }
 
-      // 4b. Calcul de la note de santé globale pondérée
       const sitePages = pages.filter(p => p.folder_id === folder.id)
       let healthScore: number | null = null
       
@@ -143,8 +140,6 @@ export default async function DashboardPage() {
 
              if (pLastAudit) {
                 analyzedPagesCount++
-                
-                // Si pas d'erreur critique (404/500), on calcule le score
                 if (pLastAudit.status_code < 400) {
                    let currentScoreSum = 0
                    let currentWeightSum = 0
@@ -190,13 +185,13 @@ export default async function DashboardPage() {
       }
   })
 
-  // Vérification incidents sur les pages orphelines
   pages.forEach(page => {
       if (hasError(page.audits)) totalIncidents++
   })
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-10">
+    // MODIFICATION ICI : 'w-full' et 'p-12' pour uniformiser avec la page SSL
+    <div className="w-full p-12 space-y-10">
       
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
@@ -352,7 +347,6 @@ export default async function DashboardPage() {
                 const hasAudit = status !== undefined
                 const isOnline = hasAudit && (status >= 200 && status < 400)
 
-                // 1. Logique Score Santé (Vert si >= 80)
                 let scoreColor = "text-gray-600 bg-gray-100 border-gray-200"
                 if (healthScore !== null) {
                     if (healthScore >= 80) scoreColor = "text-emerald-700 bg-emerald-50 border-emerald-200"
@@ -360,13 +354,11 @@ export default async function DashboardPage() {
                     else scoreColor = "text-red-700 bg-red-50 border-red-200"
                 }
 
-                // 2. Logique SSL
                 const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
                 const sslExpiry = lastAudit?.ssl_expiry_date ? new Date(lastAudit.ssl_expiry_date) : null
                 const sslDaysLeft = sslExpiry ? Math.ceil((sslExpiry.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : null
-                const isSslOk = sslDaysLeft !== null && sslDaysLeft > 30 // Warning si < 30 jours
+                const isSslOk = sslDaysLeft !== null && sslDaysLeft > 30 
 
-                // Style Card
                 const cardStyle = hasAudit 
                     ? (isOnline 
                         ? 'border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:to-white hover:border-emerald-400' 
@@ -378,7 +370,6 @@ export default async function DashboardPage() {
                         <Card className={`h-full border transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer ${cardStyle}`}>
                             <CardContent className="p-5 flex flex-col gap-4">
                                 
-                                {/* Ligne 1 : Statut Visuel + Nom + Score */}
                                 <div className="flex items-start gap-3">
                                     <div className={`shrink-0 mt-1 h-3 w-3 rounded-full shadow-sm ring-4 transition-all duration-500
                                         ${hasAudit 
@@ -403,13 +394,10 @@ export default async function DashboardPage() {
                                     </div>
                                 </div>
 
-                                {/* Séparateur léger */}
                                 <div className="h-px bg-gray-100 w-full" />
 
-                                {/* Ligne 2 : Infos Techniques (SSL + Pages) */}
                                 <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
                                     
-                                    {/* Bloc SSL */}
                                     <div className="flex items-center gap-1.5" title={sslExpiry ? `Expire le ${sslExpiry.toLocaleDateString()}` : "Pas d'info SSL"}>
                                         {sslDaysLeft !== null ? (
                                             <>
@@ -430,7 +418,6 @@ export default async function DashboardPage() {
                                         )}
                                     </div>
 
-                                    {/* Bloc Pages */}
                                     <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-md border border-gray-100">
                                         <Layers className="h-3.5 w-3.5 text-gray-400" />
                                         <span>{pageCount} page{pageCount > 1 ? 's' : ''}</span>
