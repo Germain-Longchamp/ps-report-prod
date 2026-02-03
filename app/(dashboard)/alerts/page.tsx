@@ -7,7 +7,6 @@ import { cookies } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
 
-
 export default async function IncidentsPage() {
   const supabase = await createClient()
 
@@ -90,8 +89,8 @@ export default async function IncidentsPage() {
   incidents.sort((a, b) => new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime())
 
   return (
-    // MODIFICATION ICI : 'w-full' et 'p-12' pour l'homogénéité
-    <div className="p-12 w-full space-y-10">
+    // MODIFICATION ICI : Retour au format standard 'max-w-7xl' et 'space-y-12'
+    <div className="p-8 w-full max-w-7xl mx-auto space-y-12 pb-32">
       
       {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
