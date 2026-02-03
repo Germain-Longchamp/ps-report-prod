@@ -62,8 +62,8 @@ export default async function SSLPage() {
   }).filter(Boolean) as any[]
 
   return (
-    // MODIFICATION ICI : 'w-full' au lieu de 'max-w-7xl' pour utiliser toute la largeur
-    <div className="p-8 w-full space-y-8">
+    // MODIFICATION ICI : 'p-12' (48px) pour donner plus d'air
+    <div className="w-full p-12 space-y-8">
       
       {/* HEADER */}
       <div className="flex flex-col gap-2">
