@@ -1,6 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
-import { ShieldCheck } from 'lucide-react'
+import { ShieldCheck, Folder } from 'lucide-react'
 import { SSLCertificateTable } from '@/components/SSLCertificateTable'
 import { cookies } from 'next/headers'
 
@@ -62,18 +62,20 @@ export default async function SSLPage() {
   }).filter(Boolean) as any[]
 
   return (
-    // MODIFICATION ICI : 'p-12' (48px) pour donner plus d'air
-    <div className="w-full p-12 space-y-8">
+    // MODIFICATION ICI : Layout harmonisé avec Alertes et Dossiers
+    <div className="p-8 w-full max-w-7xl mx-auto space-y-12 pb-32">
       
       {/* HEADER */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-3">
-            <ShieldCheck className="h-8 w-8 text-blue-600" />
-            Certificats SSL
-        </h1>
-        <p className="text-gray-500 text-lg">
-            Suivez la validité et l'expiration de vos certificats HTTPS.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
+        <div>
+            <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-gray-900 flex items-center gap-3">
+                <ShieldCheck className="h-8 w-8 text-blue-600" />
+                Certificats SSL
+            </h1>
+            <p className="text-gray-500 mt-2 text-lg max-w-2xl">
+                Suivez la validité et l'expiration de vos certificats HTTPS.
+            </p>
+        </div>
       </div>
 
       {/* TABLEAU */}
@@ -81,9 +83,13 @@ export default async function SSLPage() {
           <SSLCertificateTable initialCertificates={certificates} />
       ) : (
           <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/30 text-center">
-              <ShieldCheck className="h-12 w-12 text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900">Aucun certificat suivi</h3>
-              <p className="text-gray-500 mt-1">Ajoutez des sites pour voir apparaître leurs dates d'expiration ici.</p>
+              <div className="bg-white p-4 rounded-full shadow-sm mb-4">
+                  <Folder className="h-10 w-10 text-gray-300" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Aucun certificat suivi</h3>
+              <p className="text-gray-500 mt-2 max-w-sm">
+                  Ajoutez des sites pour voir apparaître leurs dates d'expiration ici.
+              </p>
           </div>
       )}
 
