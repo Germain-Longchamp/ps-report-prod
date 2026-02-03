@@ -15,7 +15,6 @@ export default async function IncidentsPage() {
   if (!user) redirect('/login')
 
   // --- LOGIQUE MULTI-TENANT ---
-  // A. Récupérer les organisations valides pour l'utilisateur
   const { data: memberships } = await supabase
     .from('organization_members')
     .select('organization_id')
@@ -23,7 +22,6 @@ export default async function IncidentsPage() {
 
   const validOrgIds = memberships?.map(m => m.organization_id) || []
 
-  // B. Récupérer l'organisation active via Cookie ou Fallback
   const cookieStore = await cookies()
   let activeOrgId = Number(cookieStore.get('active_org_id')?.value)
 
@@ -31,14 +29,12 @@ export default async function IncidentsPage() {
       activeOrgId = validOrgIds[0]
   }
 
-  // 2. Récupération des Données FILTRÉES par Organisation
+  // 2. Récupération des Données FILTRÉES
   const [foldersRes, pagesRes] = await Promise.all([
-    // Folders de l'organisation active
     supabase.from('folders')
         .select('*, audits!inner(status_code, created_at, url)')
         .eq('organization_id', activeOrgId),
     
-    // Pages dont le folder appartient à l'organisation active
     supabase.from('pages')
         .select('*, folders!inner(organization_id), audits!inner(status_code, created_at, url)')
         .eq('folders.organization_id', activeOrgId)
@@ -52,10 +48,8 @@ export default async function IncidentsPage() {
   folders.forEach((folder: any) => {
     const audits = folder.audits || []
     if (audits.length > 0) {
-        // On prend le dernier audit
         const lastAudit = audits.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
         
-        // CORRECTION : On inclut le code 0 (Crash/Timeout) en plus des erreurs HTTP
         if (lastAudit.status_code === 0 || lastAudit.status_code >= 400) {
             incidents.push({
                 type: 'site',
@@ -75,10 +69,8 @@ export default async function IncidentsPage() {
   pages.forEach((page: any) => {
     const audits = page.audits || []
     if (audits.length > 0) {
-        // On prend le dernier audit
         const lastAudit = audits.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
         
-        // CORRECTION : On inclut le code 0 ici aussi
         if (lastAudit.status_code === 0 || lastAudit.status_code >= 400) {
             incidents.push({
                 type: 'page',
@@ -87,7 +79,7 @@ export default async function IncidentsPage() {
                 url: page.url,
                 statusCode: lastAudit.status_code,
                 detectedAt: lastAudit.created_at,
-                folderId: page.folder_id // Pour le lien "Diagnostiquer" qui renvoie vers le site parent
+                folderId: page.folder_id 
             })
         }
     }
@@ -97,7 +89,8 @@ export default async function IncidentsPage() {
   incidents.sort((a, b) => new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime())
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-10">
+    // MODIFICATION ICI : 'w-full' et 'p-12' pour l'homogénéité
+    <div className="p-12 w-full space-y-10">
       
       {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6">
