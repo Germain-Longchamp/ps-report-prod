@@ -14,8 +14,9 @@ import {
   Info
 } from 'lucide-react'
 import { PageList } from '@/components/PageList'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card' // <-- Ne pas oublier CardContent
 import { SiteSettingsDialog } from '@/components/SiteSettingsDialog'
+import { UptimeHistory, DailyStatus } from '@/components/UptimeHistory' // <-- Réintégration de l'import
 import {
   Tooltip,
   TooltipContent,
@@ -27,6 +28,46 @@ export const dynamic = 'force-dynamic'
 
 type Props = {
   params: Promise<{ id: string }>
+}
+
+// --- HELPER RÉINTÉGRÉ ---
+function generate60DayHistory(audits: any[]): DailyStatus[] {
+    const history: DailyStatus[] = []
+    const today = new Date()
+    
+    // On normalise les audits par date
+    const auditMap = new Map<string, any>()
+    audits.forEach(a => {
+        const dateKey = new Date(a.created_at).toISOString().split('T')[0]
+        if (!auditMap.has(dateKey)) {
+            auditMap.set(dateKey, a)
+        }
+    })
+
+    // Boucle sur les 60 derniers jours
+    for (let i = 59; i >= 0; i--) {
+        const d = new Date()
+        d.setDate(today.getDate() - i)
+        const dateStr = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+        const dateKey = d.toISOString().split('T')[0]
+        
+        const audit = auditMap.get(dateKey)
+
+        if (audit) {
+            const isUp = audit.status_code >= 200 && audit.status_code < 400
+            history.push({
+                date: dateStr,
+                status: isUp ? 'up' : 'down',
+                code: audit.status_code
+            })
+        } else {
+            history.push({
+                date: dateStr,
+                status: 'empty'
+            })
+        }
+    }
+    return history
 }
 
 export default async function Page({ params }: Props) {
@@ -52,8 +93,7 @@ export default async function Page({ params }: Props) {
       activeOrgId = validOrgIds[0]
   }
 
-  // 2. Data Fetching (OPTIMISÉ & SÉCURISÉ)
-  // On évite le SELECT * qui peut être lourd et on cible les colonnes
+  // 2. Data Fetching
   const { data: folder, error } = await supabase
     .from('folders')
     .select(`
@@ -75,7 +115,6 @@ export default async function Page({ params }: Props) {
     .eq('organization_id', activeOrgId)
     .single()
 
-  // Gestion d'erreur explicite pour éviter la redirection silencieuse
   if (error || !folder) {
       console.error("Erreur chargement page site:", error)
       redirect('/')
@@ -83,18 +122,22 @@ export default async function Page({ params }: Props) {
 
   const pages = folder.pages || []
 
-  // --- 3. DONNÉES RACINE (RAPIDE - VIA BDD) ---
-  // On prend le dernier audit disponible en base pour l'état.
-  // C'est instantané car pas d'appel réseau externe.
-  const lastRootAudit = folder.audits?.sort((a: any, b: any) => 
+  // --- 3. DONNÉES RACINE ---
+  // Tri des audits
+  const sortedRootAudits = folder.audits?.sort((a: any, b: any) => 
     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  )[0]
+  ) || []
+
+  const lastRootAudit = sortedRootAudits[0]
 
   const liveStatus = lastRootAudit?.status_code || 0
   const isSiteUp = liveStatus >= 200 && liveStatus < 400
   const isSSLValid = lastRootAudit?.https_valid ?? false
   const isIndexable = lastRootAudit ? (lastRootAudit.seo_score || 0) > 50 : false
   const screenshotUrl = lastRootAudit?.screenshot
+
+  // Génération Historique (RÉINTÉGRÉ)
+  const uptimeHistory = generate60DayHistory(sortedRootAudits)
 
   // --- 4. CALCUL DU SCORE GLOBAL PONDÉRÉ ---
   let globalHealthScore: number | null = null
@@ -112,15 +155,12 @@ export default async function Page({ params }: Props) {
       }
 
       pages.forEach((p: any) => {
-          // Tri côté JS pour être sûr d'avoir le dernier (optimisation possible côté SQL plus tard)
           const pLastAudit = p.audits?.sort((a: any, b: any) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           )[0]
 
           if (pLastAudit) {
               analyzedPagesCount++
-              
-              // On ne calcule le score que si la page n'est pas en erreur technique (404/500)
               if (pLastAudit.status_code < 400) {
                   let currentScoreSum = 0
                   let currentWeightSum = 0
@@ -159,7 +199,7 @@ export default async function Page({ params }: Props) {
       }
   }
 
-  // --- 5. LOGIQUE UI ---
+  // --- 5. VISUALISATION ---
   const getScoreColorInfo = (score: number) => {
       if (score >= 80) return { color: 'text-emerald-500', stroke: '#10b981', bg: 'bg-emerald-50', border: 'border-emerald-100' }
       if (score >= 50) return { color: 'text-orange-500', stroke: '#f97316', bg: 'bg-orange-50', border: 'border-orange-100' }
@@ -219,9 +259,10 @@ export default async function Page({ params }: Props) {
             </div>
         </header>
 
-        {/* KPI CARDS */}
-        <section className="space-y-4">
+        {/* KPI CARDS + UPTIME */}
+        <section className="space-y-6">
           <h2 className="text-xl font-semibold text-gray-900">Santé du site</h2>
+          
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               
               {/* 1. Carte Status */}
@@ -341,6 +382,14 @@ export default async function Page({ params }: Props) {
                   <p className="text-xs text-muted-foreground mt-1">SEO Technique</p>
               </Card>
           </div>
+
+          {/* SECTION UPTIME HISTORY (RÉINTÉGRÉ) */}
+          <Card className="border-gray-200 shadow-sm bg-white overflow-hidden">
+             <CardContent className="p-6">
+                <UptimeHistory history={uptimeHistory} />
+             </CardContent>
+          </Card>
+
         </section>
 
         {/* SECTION LISTE DES PAGES */}
