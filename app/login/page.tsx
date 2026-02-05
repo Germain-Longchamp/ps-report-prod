@@ -1,15 +1,14 @@
 import Link from "next/link"
-import { login, signup } from "./actions" // On importe signup ici
+import { login, signup } from "./actions" 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { LayoutDashboard, ArrowRight, UserPlus, LogIn } from "lucide-react"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs" // Import des onglets
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs" 
 
-// --- NOUVEAU COMPOSANT SVG TECH ANIMÉ ---
+// --- COMPOSANT SVG TECH ANIMÉ (Inchangé) ---
 const TechBackgroundSVG = () => (
   <>
-    {/* Styles CSS intégrés pour les animations spécifiques */}
     <style dangerouslySetInnerHTML={{ __html: `
       @keyframes flowAnimation {
         from { stroke-dashoffset: 1000; }
@@ -20,8 +19,8 @@ const TechBackgroundSVG = () => (
         50% { opacity: 1; transform: scale(1.5); }
       }
       .flow-line {
-        stroke-dasharray: 40 960; /* Un tiret de 40px, un espace de 960px */
-        animation: flowAnimation 25s linear infinite; /* Vitesse lente */
+        stroke-dasharray: 40 960; 
+        animation: flowAnimation 25s linear infinite; 
       }
       .flow-line-fast {
         stroke-dasharray: 30 500;
@@ -49,13 +48,11 @@ const TechBackgroundSVG = () => (
         >
           <path d="M.5 40V.5H40" fill="none" />
         </pattern>
-        {/* DÉGRADÉ VIF */}
         <linearGradient id="tech-line-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="rgba(56, 189, 248, 0.8)" />
           <stop offset="50%" stopColor="rgba(99, 102, 241, 1)" />
           <stop offset="100%" stopColor="rgba(168, 85, 247, 0.8)" />
         </linearGradient>
-        {/* DÉGRADÉ POUR LE FLUX (Plus brillant) */}
         <linearGradient id="flow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
            <stop offset="0%" stopColor="#60A5FA" stopOpacity="0" />
            <stop offset="50%" stopColor="#A78BFA" />
@@ -63,39 +60,30 @@ const TechBackgroundSVG = () => (
         </linearGradient>
       </defs>
       
-      {/* Fond quadrillé */}
       <rect width="100%" height="100%" strokeWidth="0" fill="url(#tech-grid)" opacity="0.4" />
 
-      {/* --- COUCHE 1 : Lignes de base statiques (le squelette du réseau) --- */}
       <g className="stroke-2" style={{ stroke: "url(#tech-line-gradient)" }} opacity="0.5">
           <path d="M 0 200 L 400 600 L 800 400 L 1200 800" fill="none" />
           <path d="M 200 0 L 600 400 L 400 800" fill="none" />
           <path d="M 800 0 L 400 400 L 600 1000" fill="none" />
-          {/* Quelques lignes horizontales/verticales supplémentaires pour la complexité */}
           <path d="M 0 600 H 1200" opacity="0.2" />
           <path d="M 400 0 V 1000" opacity="0.2" />
       </g>
 
-      {/* --- COUCHE 2 : FLUX DE DONNÉES ANIMÉ (Les "paquets" qui voyagent) --- */}
-      {/* Ce sont des copies des lignes du dessus, avec l'animation de pointillés */}
       <g className="stroke-[3px]" style={{ stroke: "url(#flow-gradient)" }} opacity="0.9">
           <path d="M 0 200 L 400 600 L 800 400 L 1200 800" fill="none" className="flow-line" />
           <path d="M 200 0 L 600 400 L 400 800" fill="none" className="flow-line" style={{ animationDelay: '-5s' }} />
           <path d="M 800 0 L 400 400 L 600 1000" fill="none" className="flow-line-fast" />
-          {/* Flux horizontal */}
           <path d="M 1200 600 H 0" className="flow-line-fast" opacity="0.5" style={{ animationDuration: '20s' }} />
       </g>
       
-      {/* Points lumineux principaux (Existants, légèrement ajustés) */}
       <g fill="rgba(99, 102, 241, 0.9)">
           <circle cx="400" cy="600" r="5" className="animate-[ping_4s_ease-in-out_infinite]" opacity="0.8" />
           <circle cx="600" cy="400" r="4" opacity="0.6" />
           <circle cx="400" cy="400" r="3" className="animate-pulse" />
       </g>
 
-      {/* --- COUCHE 3 : SCINTILLEMENT GRILLE (Nouveaux petits points aléatoires) --- */}
       <g fill="#A78BFA" className="twinkle-dot">
-          {/* On place des points sur des intersections de la grille */}
           <circle cx="100" cy="100" r="2" style={{ animation: 'twinkle 4s ease-in-out infinite 1s' }} />
           <circle cx="300" cy="500" r="2" style={{ animation: 'twinkle 6s ease-in-out infinite 0s' }} />
           <circle cx="700" cy="200" r="2" style={{ animation: 'twinkle 5s ease-in-out infinite 2.5s' }} />
@@ -114,12 +102,12 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string }>
 }) {
-  const params = await searchParams // Next.js 15 fix
+  const params = await searchParams 
 
   return (
-    <div className="w-full h-screen lg:grid lg:grid-cols-2 overflow-hidden">
+    <div className="w-full h-screen lg:grid lg:grid-cols-2 overflow-hidden bg-white lg:bg-transparent">
       
-      {/* COLONNE GAUCHE (BRANDING + SVG) */}
+      {/* COLONNE GAUCHE (BRANDING + SVG) - Visible uniquement sur Desktop */}
       <div className="hidden relative bg-zinc-950 lg:flex flex-col justify-between p-10 text-white overflow-hidden z-0">
         <TechBackgroundSVG />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-transparent via-zinc-950/50 to-zinc-950 z-0 pointer-events-none"></div>
@@ -141,34 +129,43 @@ export default async function LoginPage({
       </div>
 
       {/* COLONNE DROITE (FORMULAIRE) */}
-      <div className="flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-white relative z-10">
+      <div className="flex items-center justify-center h-full py-12 px-4 sm:px-6 lg:px-8 bg-white relative z-10 overflow-y-auto">
         <div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[400px]">
           
+          {/* --- LOGO MOBILE (AJOUTÉ ICI) --- */}
+          <div className="flex lg:hidden flex-col items-center gap-3 mb-4 animate-in fade-in slide-in-from-top-4 duration-700">
+             <div className="p-3 bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-xl shadow-lg shadow-blue-500/30">
+               <LayoutDashboard className="h-8 w-8" />
+             </div>
+             <span className="text-2xl font-bold tracking-tight text-zinc-900">
+               PS Report
+             </span>
+          </div>
+
           <div className="flex flex-col space-y-2 text-center mb-2">
-            <h1 className="text-4xl font-extrabold tracking-tight">
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 leading-tight">
                 Bienvenue
               </span>
             </h1>
-            <p className="text-base text-gray-500 mt-2">
+            <p className="text-sm sm:text-base text-gray-500 mt-2">
               Accédez à votre tableau de bord.
             </p>
           </div>
 
-          {/* --- NOUVEAUX TABS PLUS JOLIS --- */}
+          {/* --- TABS --- */}
           <Tabs defaultValue="login" className="w-full">
             
-            {/* 1. La liste des onglets style "Pilule" */}
             <TabsList className="grid w-full grid-cols-2 mb-8 p-1 bg-zinc-100/80 border border-zinc-200/50 rounded-full h-12">
                 <TabsTrigger 
                     value="login" 
-                    className="rounded-full text-zinc-500 data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm data-[state=active]:font-semibold transition-all duration-300 h-full"
+                    className="rounded-full text-zinc-500 data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm data-[state=active]:font-semibold transition-all duration-300 h-full text-sm"
                 >
                     Connexion
                 </TabsTrigger>
                 <TabsTrigger 
                     value="signup" 
-                    className="rounded-full text-zinc-500 data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm data-[state=active]:font-semibold transition-all duration-300 h-full"
+                    className="rounded-full text-zinc-500 data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm data-[state=active]:font-semibold transition-all duration-300 h-full text-sm"
                 >
                     Inscription
                 </TabsTrigger>
@@ -210,8 +207,6 @@ export default async function LoginPage({
             <TabsContent value="signup" className="space-y-4 animate-in fade-in-50 slide-in-from-right-2 duration-300">
                 <form action={signup}>
                 <div className="grid gap-5">
-                    
-                    {/* NOUVEAUX CHAMPS : PRÉNOM & NOM */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                             <Label htmlFor="firstName" className="text-zinc-700">Prénom</Label>
@@ -266,7 +261,7 @@ export default async function LoginPage({
             </TabsContent>
           </Tabs>
 
-          {/* GESTION ERREURS VISUELLE */}
+          {/* GESTION ERREURS */}
           {params?.error && (
              <div className="p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center justify-center gap-2 animate-in fade-in slide-in-from-top-2">
                 <span className="font-bold">Erreur :</span> Identifiants incorrects ou compte existant.
