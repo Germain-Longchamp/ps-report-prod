@@ -11,13 +11,13 @@ import {
   Plus, 
   AlertOctagon, 
   ShieldCheck,
-  Menu // <-- Pour l'icône Hamburger
+  Menu,
+  X // Ajout de l'icône de fermeture
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { OrgSwitcher } from './OrgSwitcher'
 import { CreateSiteModal } from './CreateSiteModal'
-import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet" // <-- Import Sheet
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 
 interface DashboardSidebarProps {
   userEmail: string | undefined
@@ -38,7 +38,7 @@ function SidebarContent({
 
     return (
         <div className="flex flex-col h-full bg-[#0A0A0A] text-white">
-            {/* HEADER */}
+            {/* HEADER (Masqué en mobile dans le sheet pour éviter la redondance) */}
             <div className="h-16 flex items-center px-6 border-b border-white/10 shrink-0">
                 <Link href="/" className="flex items-center gap-3 group" onClick={onNavigate}>
                     <div className="p-1.5 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-lg shadow-sm shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-all duration-300">
@@ -175,16 +175,35 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
                 <SidebarContent {...props} />
             </aside>
 
-            {/* VERSION MOBILE (Sheet / Offcanvas) */}
-            <div className="md:hidden fixed top-4 left-4 z-50">
+            {/* VERSION MOBILE : CAPSULE FLOTTANTE "APP MÉTIER" */}
+            <div className="md:hidden fixed top-5 left-5 z-50">
                 <Sheet open={open} onOpenChange={setOpen}>
                     <SheetTrigger asChild>
-                        <Button variant="outline" size="icon" className="bg-white border-gray-200 shadow-md h-10 w-10">
-                            <Menu className="h-5 w-5 text-gray-700" />
-                        </Button>
+                        <button className="group flex items-center gap-3 pl-3 pr-4 py-2.5 bg-[#0A0A0A] text-white rounded-full shadow-2xl border border-white/10 hover:scale-105 hover:bg-zinc-900 transition-all duration-300 active:scale-95">
+                            {/* Icône Menu avec petit effet */}
+                            <div className="p-1 bg-white/10 rounded-full group-hover:bg-blue-600 transition-colors">
+                                <Menu className="h-4 w-4" />
+                            </div>
+                            
+                            {/* Texte Branding */}
+                            <div className="flex flex-col items-start leading-none gap-0.5">
+                                <span className="text-xs font-bold tracking-wide">MENU</span>
+                                <span className="text-[10px] text-zinc-400 font-medium">PS Report</span>
+                            </div>
+                        </button>
                     </SheetTrigger>
-                    <SheetContent side="left" className="p-0 w-72 bg-[#0A0A0A] border-r border-white/10">
-                        <SheetTitle className="sr-only">Menu de navigation</SheetTitle>
+                    
+                    <SheetContent side="left" className="p-0 w-[85%] max-w-sm bg-[#0A0A0A] border-r border-white/10">
+                        <SheetTitle className="sr-only">Navigation</SheetTitle>
+                        
+                        {/* Bouton Fermer Custom plus accessible */}
+                        <button 
+                            onClick={() => setOpen(false)}
+                            className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white bg-white/5 rounded-full z-50"
+                        >
+                            <X className="h-5 w-5" />
+                        </button>
+
                         <SidebarContent {...props} onNavigate={() => setOpen(false)} />
                     </SheetContent>
                 </Sheet>
