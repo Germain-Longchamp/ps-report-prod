@@ -11,7 +11,7 @@ import {
   Plus, 
   AlertOctagon, 
   ShieldCheck,
-  Activity, // <--- Import de l'icône pour Statuts
+  Activity,
   Menu,
   X 
 } from 'lucide-react'
@@ -39,7 +39,7 @@ function SidebarContent({
 
     return (
         <div className="flex flex-col h-full bg-[#0A0A0A] text-white">
-            {/* HEADER (Masqué en mobile dans le sheet pour éviter la redondance) */}
+            {/* HEADER */}
             <div className="h-16 flex items-center px-6 border-b border-white/10 shrink-0">
                 <Link href="/" className="flex items-center gap-3 group" onClick={onNavigate}>
                     <div className="p-1.5 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-lg shadow-sm shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-all duration-300">
@@ -55,6 +55,7 @@ function SidebarContent({
             <nav className="flex-1 overflow-y-auto p-4 space-y-8 no-scrollbar">
                 
                 <div className="space-y-1">
+                    {/* 1. VUE D'ENSEMBLE */}
                     <Link 
                         href="/" 
                         onClick={onNavigate}
@@ -67,6 +68,33 @@ function SidebarContent({
                         Vue d'ensemble
                     </Link>
 
+                    {/* 2. STATUTS SYSTÈMES (Remonté) */}
+                    <Link 
+                        href="/status" 
+                        onClick={onNavigate}
+                        className={cn(
+                            "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                            isActive('/status') ? "bg-white/10 text-white" : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                        )}
+                    >
+                        <Activity className="h-4 w-4" />
+                        Statuts systèmes
+                    </Link>
+
+                    {/* 3. CERTIFICATS SSL */}
+                    <Link 
+                        href="/ssl" 
+                        onClick={onNavigate}
+                        className={cn(
+                            "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                            isActive('/ssl') ? "bg-white/10 text-white" : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                        )}
+                    >
+                        <ShieldCheck className="h-4 w-4" />
+                        Certificats SSL
+                    </Link>
+
+                    {/* 4. INCIDENTS (Descendu) */}
                     <Link 
                         href="/alerts" 
                         onClick={onNavigate}
@@ -84,31 +112,6 @@ function SidebarContent({
                                 {incidentCount}
                             </span>
                         )}
-                    </Link>
-
-                    <Link 
-                        href="/ssl" 
-                        onClick={onNavigate}
-                        className={cn(
-                            "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors",
-                            isActive('/ssl') ? "bg-white/10 text-white" : "text-zinc-400 hover:bg-white/5 hover:text-white"
-                        )}
-                    >
-                        <ShieldCheck className="h-4 w-4" />
-                        Certificats SSL
-                    </Link>
-
-                    {/* AJOUT DU LIEN STATUTS SYSTÈMES */}
-                    <Link 
-                        href="/status" 
-                        onClick={onNavigate}
-                        className={cn(
-                            "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors",
-                            isActive('/status') ? "bg-white/10 text-white" : "text-zinc-400 hover:bg-white/5 hover:text-white"
-                        )}
-                    >
-                        <Activity className="h-4 w-4" />
-                        Statuts systèmes
                     </Link>
                 </div>
 
@@ -184,22 +187,19 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
 
     return (
         <>
-            {/* VERSION DESKTOP (Fixe) */}
+            {/* VERSION DESKTOP */}
             <aside className="w-64 bg-[#0A0A0A] hidden md:flex flex-col fixed inset-y-0 z-50 border-r border-white/10">
                 <SidebarContent {...props} />
             </aside>
 
-            {/* VERSION MOBILE : CAPSULE FLOTTANTE "APP MÉTIER" */}
+            {/* VERSION MOBILE */}
             <div className="md:hidden fixed top-5 left-5 z-50">
                 <Sheet open={open} onOpenChange={setOpen}>
                     <SheetTrigger asChild>
                         <button className="group flex items-center gap-3 pl-3 pr-4 py-2.5 bg-[#0A0A0A] text-white rounded-full shadow-2xl border border-white/10 hover:scale-105 hover:bg-zinc-900 transition-all duration-300 active:scale-95">
-                            {/* Icône Menu avec petit effet */}
                             <div className="p-1 bg-white/10 rounded-full group-hover:bg-blue-600 transition-colors">
                                 <Menu className="h-4 w-4" />
                             </div>
-                            
-                            {/* Texte Branding */}
                             <div className="flex flex-col items-start leading-none gap-0.5">
                                 <span className="text-xs font-bold tracking-wide">MENU</span>
                                 <span className="text-[10px] text-zinc-400 font-medium">PS Report</span>
@@ -209,15 +209,12 @@ export function DashboardSidebar(props: DashboardSidebarProps) {
                     
                     <SheetContent side="left" className="p-0 w-[85%] max-w-sm bg-[#0A0A0A] border-r border-white/10">
                         <SheetTitle className="sr-only">Navigation</SheetTitle>
-                        
-                        {/* Bouton Fermer Custom plus accessible */}
                         <button 
                             onClick={() => setOpen(false)}
                             className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-white bg-white/5 rounded-full z-50"
                         >
                             <X className="h-5 w-5" />
                         </button>
-
                         <SidebarContent {...props} onNavigate={() => setOpen(false)} />
                     </SheetContent>
                 </Sheet>
