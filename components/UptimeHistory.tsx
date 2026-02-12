@@ -15,31 +15,36 @@ export type DailyStatus = {
 }
 
 export function UptimeHistory({ history }: { history: DailyStatus[] }) {
-  // Calcul du % d'uptime sur la période affichée
   const totalTracked = history.filter(h => h.status !== 'empty').length
   const totalUp = history.filter(h => h.status === 'up').length
   const uptimePercentage = totalTracked > 0 ? Math.round((totalUp / totalTracked) * 100) : 0
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span className="font-medium text-gray-700">Disponibilité (60 jours)</span>
-        <span className={cn("font-bold", uptimePercentage === 100 ? "text-emerald-600" : uptimePercentage >= 90 ? "text-orange-600" : "text-red-600")}>
-            {totalTracked > 0 ? `${uptimePercentage}%` : '--'}
-        </span>
+    <div className="flex flex-col gap-1.5 w-full"> {/* Gap réduit ici */}
+      
+      {/* Header compact */}
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+        <span>60 derniers jours</span>
+        <div className="flex items-center gap-2">
+            <span>Disponibilité :</span>
+            <span className={cn("font-bold text-xs", uptimePercentage === 100 ? "text-emerald-600" : "text-orange-600")}>
+                {totalTracked > 0 ? `${uptimePercentage}%` : '--'}
+            </span>
+        </div>
       </div>
 
-      <div className="flex gap-[3px] h-8 sm:h-10 items-end">
+      {/* Barres réduites en hauteur (h-6) */}
+      <div className="flex gap-[2px] h-6 items-end w-full"> 
         <TooltipProvider delayDuration={0}>
           {history.map((day, i) => (
             <Tooltip key={i}>
               <TooltipTrigger asChild>
                 <div 
                   className={cn(
-                    "flex-1 rounded-[1px] transition-all hover:scale-110 hover:opacity-80 cursor-help min-w-[3px]",
+                    "flex-1 rounded-[1px] transition-all hover:opacity-80 cursor-help min-w-[2px]", // hover:scale retiré pour plus de stabilité visuelle
                     day.status === 'up' && "bg-emerald-500 h-full",
                     day.status === 'down' && "bg-red-500 h-full",
-                    day.status === 'empty' && "bg-gray-100 h-full" // h-full pour garder l'alignement, ou h-1/2 pour marquer le vide
+                    day.status === 'empty' && "bg-gray-100 h-full"
                   )}
                 />
               </TooltipTrigger>
@@ -54,11 +59,6 @@ export function UptimeHistory({ history }: { history: DailyStatus[] }) {
             </Tooltip>
           ))}
         </TooltipProvider>
-      </div>
-      
-      <div className="flex justify-between text-xs text-muted-foreground uppercase font-medium tracking-wider">
-        <span>Il y a 60 jours</span>
-        <span>Aujourd'hui</span>
       </div>
     </div>
   )
