@@ -2,13 +2,14 @@ import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { cookies } from 'next/headers'
-import { Activity, Globe, ArrowRight } from 'lucide-react'
+import { Activity, Globe, ArrowRight, ExternalLink } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { UptimeHistory, DailyStatus } from '@/components/UptimeHistory'
+import { Button } from '@/components/ui/button'
 
 export const dynamic = 'force-dynamic'
 
-// --- HELPER (Identique à celui de la page détail) ---
+// --- HELPER ---
 function generate60DayHistory(audits: any[]): DailyStatus[] {
     const history: DailyStatus[] = []
     const today = new Date()
@@ -69,7 +70,7 @@ export default async function StatusPage() {
       activeOrgId = validOrgIds[0]
   }
 
-  // 2. Data Fetching (Tous les sites + leurs audits)
+  // 2. Data Fetching
   const { data: folders } = await supabase
     .from('folders')
     .select(`
@@ -83,7 +84,6 @@ export default async function StatusPage() {
 
   // 3. Préparation des données
   const sitesStatus = (folders || []).map(folder => {
-      // On trie les audits pour le générateur
       const sortedAudits = folder.audits?.sort((a: any, b: any) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ) || []
@@ -110,26 +110,33 @@ export default async function StatusPage() {
         </p>
       </div>
 
-      {/* LISTE DES STATUTS */}
-      <div className="grid gap-6">
+      {/* LISTE DES STATUTS - GRILLE COMPACTE */}
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
         {sitesStatus.length > 0 ? (
             sitesStatus.map((site) => (
-                <Card key={site.id} className="shadow-sm border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
-                    <CardContent className="p-6">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
-                            <div className="flex flex-col gap-1">
-                                <Link href={`/site/${site.id}`} className="text-lg font-bold text-gray-900 hover:text-blue-600 transition-colors flex items-center gap-2 group">
+                <Card key={site.id} className="shadow-sm border-gray-200 overflow-hidden hover:shadow-md hover:border-blue-200 transition-all group">
+                    <CardContent className="p-4"> {/* Padding réduit */}
+                        
+                        {/* EN-TÊTE COMPACT */}
+                        <div className="flex items-start justify-between mb-4">
+                            <div className="flex flex-col min-w-0 pr-2">
+                                <Link href={`/site/${site.id}`} className="text-base font-bold text-gray-900 hover:text-blue-600 transition-colors truncate">
                                     {site.name}
-                                    <ArrowRight className="h-4 w-4 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-blue-500" />
                                 </Link>
-                                <a href={site.url} target="_blank" className="text-sm text-gray-500 hover:text-blue-500 flex items-center gap-1 w-fit">
-                                    <Globe className="h-3 w-3" />
-                                    {site.url}
+                                <a href={site.url} target="_blank" className="text-xs text-gray-400 hover:text-blue-500 flex items-center gap-1 w-fit mt-0.5 truncate">
+                                    {site.url} <ExternalLink className="h-2.5 w-2.5" />
                                 </a>
                             </div>
+                            
+                            {/* BOUTON ACTION */}
+                            <Button variant="outline" size="sm" className="h-8 text-xs shrink-0 bg-gray-50 hover:bg-white hover:text-blue-600 border-gray-200" asChild>
+                                <Link href={`/site/${site.id}`}>
+                                    Voir <ArrowRight className="h-3 w-3 ml-1 group-hover:translate-x-0.5 transition-transform" />
+                                </Link>
+                            </Button>
                         </div>
                         
-                        {/* Composant Historique */}
+                        {/* HISTORIQUE */}
                         <div className="pt-2 border-t border-gray-50">
                             <UptimeHistory history={site.history} />
                         </div>
@@ -137,7 +144,7 @@ export default async function StatusPage() {
                 </Card>
             ))
         ) : (
-            <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed">
+            <div className="col-span-full text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-dashed">
                 Aucun site configuré pour le moment.
             </div>
         )}
