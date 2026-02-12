@@ -11,11 +11,11 @@ import {
   Layers, 
   Plus, 
   Building2,
+  Clock // <--- Import Clock
 } from 'lucide-react'
 import { cookies } from 'next/headers'
 import { CreateOrgModal } from '@/components/CreateOrgModal'
 import { Button } from '@/components/ui/button'
-// IMPORT DU NOUVEAU COMPOSANT
 import { DashboardSiteList } from '@/components/DashboardSiteList'
 
 export const dynamic = 'force-dynamic'
@@ -93,6 +93,26 @@ export default async function DashboardPage() {
   const userName = profile?.first_name || user.email?.split('@')[0] || 'Utilisateur'
   const orgName = orgRes.data?.name || "Organisation Active"
 
+  // --- NOUVEAU : Récupération de la date du dernier audit ---
+  let lastAuditDate: Date | null = null;
+  folders.forEach(f => {
+      if (f.audits && f.audits.length > 0) {
+          const folderLast = new Date(f.audits[f.audits.length - 1].created_at); // Supposant trié ou on trie
+          // On sécurise en triant pour être sûr
+          const dates = f.audits.map((a: any) => new Date(a.created_at).getTime())
+          const maxDate = Math.max(...dates)
+          if (!lastAuditDate || maxDate > lastAuditDate.getTime()) {
+              lastAuditDate = new Date(maxDate)
+          }
+      }
+  })
+
+  // Formatage de l'heure du dernier audit
+  const lastAuditDisplay = lastAuditDate 
+    ? `Dernier check : ${lastAuditDate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+    : 'En attente de données'
+
+
   // 4. CALCUL DES INCIDENTS & SANTÉ GLOBALE
   let totalIncidents = 0
 
@@ -111,11 +131,9 @@ export default async function DashboardPage() {
     BEST_PRACTICES: 1
   }
 
-  // Map pour stocker toutes les métriques (Santé + SSL + Pages)
   const folderMetricsMap: Record<string, { status: number | undefined, healthScore: number | null, pageCount: number }> = {}
 
   folders.forEach(folder => {
-      // 4a. Statut HTTP
       const lastAudit = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
       let status = undefined
       if (lastAudit) {
@@ -123,7 +141,6 @@ export default async function DashboardPage() {
           if (hasError(folder.audits)) totalIncidents++
       }
 
-      // 4b. Calcul de la note de santé globale pondérée
       const sitePages = pages.filter(p => p.folder_id === folder.id)
       let healthScore: number | null = null
       
@@ -183,7 +200,6 @@ export default async function DashboardPage() {
       }
   })
 
-  // Vérification incidents sur les pages orphelines
   pages.forEach(page => {
       if (hasError(page.audits)) totalIncidents++
   })
@@ -204,6 +220,16 @@ export default async function DashboardPage() {
                     <Calendar className="h-3.5 w-3.5" />
                     <span className="capitalize">{formattedDate}</span>
                 </div>
+                {/* --- NOUVEAU : INDICATEUR DERNIER AUDIT --- */}
+                {lastAuditDate && (
+                    <>
+                        <div className="h-4 w-px bg-gray-300 hidden sm:block"></div>
+                        <div className="flex items-center gap-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                            <Clock className="h-3.5 w-3.5" />
+                            <span>{lastAuditDisplay}</span>
+                        </div>
+                    </>
+                )}
             </div>
 
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
