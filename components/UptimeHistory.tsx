@@ -20,7 +20,7 @@ export function UptimeHistory({ history }: { history: DailyStatus[] }) {
   const uptimePercentage = totalTracked > 0 ? Math.round((totalUp / totalTracked) * 100) : 0
 
   return (
-    <div className="flex flex-col gap-1.5 w-full"> {/* Gap réduit ici */}
+    <div className="flex flex-col gap-1.5 w-full"> 
       
       {/* Header compact */}
       <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
@@ -33,15 +33,15 @@ export function UptimeHistory({ history }: { history: DailyStatus[] }) {
         </div>
       </div>
 
-      {/* Barres réduites en hauteur (h-6) */}
-      <div className="flex gap-[2px] h-6 items-end w-full"> 
+      {/* Barres ajustées (h-8 au lieu de h-6) */}
+      <div className="flex gap-[2px] h-8 items-end w-full"> 
         <TooltipProvider delayDuration={0}>
           {history.map((day, i) => (
             <Tooltip key={i}>
               <TooltipTrigger asChild>
                 <div 
                   className={cn(
-                    "flex-1 rounded-[1px] transition-all hover:opacity-80 cursor-help min-w-[2px]", // hover:scale retiré pour plus de stabilité visuelle
+                    "flex-1 rounded-[1px] transition-all hover:opacity-80 cursor-help min-w-[2px]",
                     day.status === 'up' && "bg-emerald-500 h-full",
                     day.status === 'down' && "bg-red-500 h-full",
                     day.status === 'empty' && "bg-gray-100 h-full"
