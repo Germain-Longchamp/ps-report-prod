@@ -11,8 +11,9 @@ import {
   Plus, 
   AlertOctagon, 
   ShieldCheck,
+  Activity, // <--- Import de l'icône pour Statuts
   Menu,
-  X // Ajout de l'icône de fermeture
+  X 
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { OrgSwitcher } from './OrgSwitcher'
@@ -95,6 +96,19 @@ function SidebarContent({
                     >
                         <ShieldCheck className="h-4 w-4" />
                         Certificats SSL
+                    </Link>
+
+                    {/* AJOUT DU LIEN STATUTS SYSTÈMES */}
+                    <Link 
+                        href="/status" 
+                        onClick={onNavigate}
+                        className={cn(
+                            "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                            isActive('/status') ? "bg-white/10 text-white" : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                        )}
+                    >
+                        <Activity className="h-4 w-4" />
+                        Statuts systèmes
                     </Link>
                 </div>
 
