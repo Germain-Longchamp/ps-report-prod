@@ -7,34 +7,42 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+// Importez le type depuis utils maintenant
+import { type DailyStatus } from "@/lib/utils" 
 
-export type DailyStatus = {
-  date: string
-  status: 'up' | 'down' | 'empty'
-  code?: number
+interface UptimeHistoryProps {
+  history: DailyStatus[]
+  size?: 'default' | 'sm' // Nouvelle prop
 }
 
-export function UptimeHistory({ history }: { history: DailyStatus[] }) {
+export function UptimeHistory({ history, size = 'default' }: UptimeHistoryProps) {
   const totalTracked = history.filter(h => h.status !== 'empty').length
   const totalUp = history.filter(h => h.status === 'up').length
   const uptimePercentage = totalTracked > 0 ? Math.round((totalUp / totalTracked) * 100) : 0
 
+  // Configuration selon la taille
+  const isSmall = size === 'sm'
+  const barHeight = isSmall ? 'h-5' : 'h-8' // Plus petit pour les cartes
+  const barGap = isSmall ? 'gap-[1px]' : 'gap-[2px]' // Plus serré pour les cartes
+
   return (
     <div className="flex flex-col gap-1.5 w-full"> 
       
-      {/* Header compact */}
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-        <span>60 derniers jours</span>
-        <div className="flex items-center gap-2">
-            <span>Disponibilité :</span>
-            <span className={cn("font-bold text-xs", uptimePercentage === 100 ? "text-emerald-600" : "text-orange-600")}>
-                {totalTracked > 0 ? `${uptimePercentage}%` : '--'}
-            </span>
+      {/* Le Header est masqué en mode 'sm' pour gagner de la place */}
+      {!isSmall && (
+        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+            <span>60 derniers jours</span>
+            <div className="flex items-center gap-2">
+                <span>Disponibilité :</span>
+                <span className={cn("font-bold text-xs", uptimePercentage === 100 ? "text-emerald-600" : "text-orange-600")}>
+                    {totalTracked > 0 ? `${uptimePercentage}%` : '--'}
+                </span>
+            </div>
         </div>
-      </div>
+      )}
 
-      {/* Barres ajustées (h-8 au lieu de h-6) */}
-      <div className="flex gap-[2px] h-8 items-end w-full"> 
+      {/* Barres */}
+      <div className={cn("flex items-end w-full", barGap, barHeight)}> 
         <TooltipProvider delayDuration={0}>
           {history.map((day, i) => (
             <Tooltip key={i}>
