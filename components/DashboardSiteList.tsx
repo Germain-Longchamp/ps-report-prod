@@ -12,13 +12,14 @@ import {
   Plus,
   Activity,
   ArrowRight,
+  ExternalLink
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CreateSiteModal } from '@/components/CreateSiteModal'
-import { cn, generate60DayHistory } from '@/lib/utils' // Import du helper
-import { UptimeHistory } from '@/components/UptimeHistory' // Import du composant
+import { cn, generate60DayHistory } from '@/lib/utils'
+import { UptimeHistory } from '@/components/UptimeHistory'
 
 interface DashboardSiteListProps {
   folders: any[]
@@ -63,8 +64,8 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
           </div>
       </div>
 
-      {/* --- LISTE DES CARTES --- */}
-      <div className="space-y-2">
+      {/* --- LISTE "SUPER ROW" --- */}
+      <div className="space-y-3">
         {filteredFolders.length > 0 ? (
            filteredFolders.map((folder) => {
               const metric = metrics[folder.id]
@@ -75,28 +76,25 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
               const hasAudit = status !== undefined
               const isOnline = hasAudit && (status >= 200 && status < 400)
 
-              // Couleurs dynamiques pour le score
-              let scoreClass = "text-zinc-500 bg-zinc-100 border-zinc-200"
+              // Couleurs dynamiques
+              let scoreClass = "text-zinc-500 bg-zinc-50 border-zinc-200"
               if (healthScore !== null) {
                   if (healthScore >= 90) scoreClass = "text-emerald-700 bg-emerald-50 border-emerald-200"
                   else if (healthScore >= 50) scoreClass = "text-orange-700 bg-orange-50 border-orange-200"
                   else scoreClass = "text-red-700 bg-red-50 border-red-200"
               }
 
-              // Logique SSL
-              // Note: Pour optimiser, on pourrait passer le 'lastAudit' directement dans les props, 
-              // mais ici on le recalcule comme avant.
+              // SSL
               const sortedAudits = folder.audits?.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) || []
               const lastAudit = sortedAudits[0]
-              
               const sslExpiry = lastAudit?.ssl_expiry_date ? new Date(lastAudit.ssl_expiry_date) : null
               const sslDaysLeft = sslExpiry ? Math.ceil((sslExpiry.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : null
               const isSslOk = sslDaysLeft !== null && sslDaysLeft > 30
 
-              // --- GENERATION HISTORIQUE ---
+              // Historique
               const uptimeHistory = generate60DayHistory(sortedAudits)
 
-              // Indicateur latéral
+              // Couleur latérale
               const statusLineColor = hasAudit 
                   ? (isOnline ? "bg-emerald-500" : "bg-red-500") 
                   : "bg-zinc-300"
@@ -105,66 +103,70 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
                   <Link key={folder.id} href={`/site/${folder.id}`} className="block group">
                       <Card className="relative overflow-hidden border border-gray-200 bg-white shadow-sm hover:shadow-md hover:border-blue-300/50 transition-all duration-200">
                           
-                          {/* Ligne de statut */}
+                          {/* Ligne de statut latérale */}
                           <div className={`absolute left-0 top-0 bottom-0 w-1 ${statusLineColor}`} />
 
-                          <div className="flex flex-col py-3 px-4 gap-3 pl-5">
+                          {/* CONTENEUR FLEX PRINCIPAL */}
+                          <div className="flex flex-col lg:flex-row lg:items-stretch lg:h-[68px]">
                               
-                              {/* LIGNE DU HAUT : INFO + METRIQUES */}
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              {/* ZONE 1 : IDENTITÉ (Gauche) - Largeur fixe sur Desktop */}
+                              <div className="flex flex-col justify-center py-3 pl-5 pr-4 gap-1 lg:w-[280px] shrink-0 border-b lg:border-b-0 lg:border-r border-gray-100">
+                                  <div className="flex items-center gap-2">
+                                      <h3 className="font-bold text-gray-900 truncate text-sm leading-tight group-hover:text-blue-600 transition-colors">
+                                          {folder.name}
+                                      </h3>
+                                      {!isOnline && hasAudit && (
+                                          <span className="flex h-2 w-2 rounded-full bg-red-500 lg:hidden" />
+                                      )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[11px] text-gray-500 group-hover:text-gray-700">
+                                      <Globe className="h-3 w-3 text-gray-400" />
+                                      <span className="truncate font-mono opacity-80">{folder.root_url}</span>
+                                  </div>
+                              </div>
+
+                              {/* ZONE 2 : UPTIME HISTORY (Centre) - Elastique */}
+                              <div className="flex-1 flex flex-col justify-center px-4 py-3 lg:py-0 min-w-0 bg-white">
+                                  <div className="w-full flex items-end h-8 lg:h-full lg:pb-3 lg:pt-4">
+                                    <UptimeHistory history={uptimeHistory} size="sm" />
+                                  </div>
+                              </div>
+
+                              {/* ZONE 3 : MÉTRIQUES (Droite) - Fond grisé léger */}
+                              <div className="flex items-center justify-end gap-3 p-3 lg:px-6 bg-gray-50/50 border-t lg:border-t-0 lg:border-l border-gray-100 shrink-0">
                                   
-                                  {/* INFO SITE */}
-                                  <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2">
-                                          <h3 className="font-bold text-gray-900 truncate text-sm leading-tight group-hover:text-blue-600 transition-colors">
-                                              {folder.name}
-                                          </h3>
-                                          {!isOnline && hasAudit && (
-                                              <span className="flex h-2 w-2 rounded-full bg-red-500 sm:hidden" />
-                                          )}
-                                      </div>
-                                      <div className="flex items-center gap-1.5 text-[11px] text-gray-500 group-hover:text-gray-700 mt-0.5">
-                                          <Globe className="h-3 w-3 text-gray-400" />
-                                          <span className="truncate font-mono opacity-80">{folder.root_url}</span>
+                                  {/* Score */}
+                                  <div className={cn("hidden sm:flex flex-col items-center justify-center w-[50px] h-[40px] rounded border", scoreClass)}>
+                                      <span className="text-[10px] font-bold uppercase opacity-70">Score</span>
+                                      <span className="font-mono text-xs font-bold leading-none">{healthScore ?? '-'}</span>
+                                  </div>
+
+                                  {/* SSL (Compact) */}
+                                  <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded border h-[40px]", 
+                                      isSslOk ? "bg-white border-gray-200 text-gray-600" : "bg-red-50 border-red-200 text-red-700"
+                                  )}>
+                                      {isSslOk ? <Lock className="h-3.5 w-3.5 opacity-60" /> : <Unlock className="h-3.5 w-3.5" />}
+                                      <div className="flex flex-col leading-none">
+                                          <span className="text-[9px] font-bold uppercase opacity-60">SSL</span>
+                                          <span className="font-mono text-xs font-bold">{sslDaysLeft !== null ? `${sslDaysLeft}j` : '-'}</span>
                                       </div>
                                   </div>
 
-                                  {/* METRIQUES */}
-                                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                                      
-                                      {/* Bloc Santé */}
-                                      <div className={cn("flex items-center gap-2 px-2 py-1 rounded border min-w-[75px] justify-between", scoreClass)}>
-                                          <BarChart3 className="h-3 w-3 opacity-70" />
-                                          <span className="font-mono text-xs font-bold">{healthScore ?? '-'}</span>
-                                      </div>
-
-                                      {/* Bloc Pages */}
-                                      <div className="flex items-center gap-2 px-2 py-1 rounded border border-gray-200 bg-gray-50 text-gray-600 min-w-[75px] justify-between">
-                                          <Layers className="h-3 w-3 opacity-70" />
+                                  {/* Pages (Compact) */}
+                                  <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-gray-200 bg-white text-gray-600 h-[40px]">
+                                      <Layers className="h-3.5 w-3.5 opacity-60" />
+                                      <div className="flex flex-col leading-none">
+                                          <span className="text-[9px] font-bold uppercase opacity-60">Pages</span>
                                           <span className="font-mono text-xs font-bold">{pageCount}</span>
                                       </div>
-
-                                      {/* Bloc SSL */}
-                                      <div className={cn("flex items-center gap-2 px-2 py-1 rounded border min-w-[85px] justify-between", 
-                                          isSslOk ? "bg-blue-50 text-blue-700 border-blue-200" : (hasAudit ? "bg-red-50 text-red-700 border-red-200" : "bg-gray-50 text-gray-500 border-gray-200")
-                                      )}>
-                                          {isSslOk ? <Lock className="h-3 w-3 opacity-70" /> : <Unlock className="h-3 w-3 opacity-70" />}
-                                          <span className="font-mono text-[10px] font-bold">
-                                              {sslDaysLeft !== null ? `J-${sslDaysLeft}` : '--'}
-                                          </span>
-                                      </div>
-
-                                      <div className="hidden sm:flex text-gray-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all pl-1">
-                                          <ArrowRight className="h-4 w-4" />
-                                      </div>
                                   </div>
-                              </div>
 
-                              {/* LIGNE DU BAS : UPTIME HISTORY (Nouvelle intégration) */}
-                              <div className="mt-1">
-                                <UptimeHistory history={uptimeHistory} size="sm" />
-                              </div>
+                                  {/* Arrow Action */}
+                                  <div className="hidden lg:flex items-center justify-center w-8 h-8 rounded-full hover:bg-white hover:shadow-sm text-gray-300 group-hover:text-blue-600 transition-all ml-2">
+                                      <ArrowRight className="h-4 w-4" />
+                                  </div>
 
+                              </div>
                           </div>
                       </Card>
                   </Link>
