@@ -11,8 +11,7 @@ import {
   Search,
   Plus,
   Activity,
-  ArrowRight,
-  ExternalLink
+  ArrowRight
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -64,8 +63,8 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
           </div>
       </div>
 
-      {/* --- LISTE "SUPER ROW" --- */}
-      <div className="space-y-3">
+      {/* --- LISTE SUPER ROW --- */}
+      <div className="space-y-2">
         {filteredFolders.length > 0 ? (
            filteredFolders.map((folder) => {
               const metric = metrics[folder.id]
@@ -106,63 +105,63 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
                           {/* Ligne de statut latérale */}
                           <div className={`absolute left-0 top-0 bottom-0 w-1 ${statusLineColor}`} />
 
-                          {/* CONTENEUR FLEX PRINCIPAL */}
-                          <div className="flex flex-col lg:flex-row lg:items-stretch lg:h-[68px]">
+                          {/* CONTENEUR FLEX UNIQUE (SUPER ROW) */}
+                          {/* py-2 appliqué ici comme demandé */}
+                          <div className="flex flex-col lg:flex-row lg:items-center py-2 pl-5 pr-3 gap-4 lg:gap-6 min-h-[60px]">
                               
-                              {/* ZONE 1 : IDENTITÉ (Gauche) - Largeur fixe sur Desktop */}
-                              <div className="flex flex-col justify-center py-3 pl-5 pr-4 gap-1 lg:w-[280px] shrink-0 border-b lg:border-b-0 lg:border-r border-gray-100">
+                              {/* 1. IDENTITÉ (Fixe) */}
+                              <div className="flex flex-col justify-center gap-0.5 lg:w-[220px] shrink-0">
                                   <div className="flex items-center gap-2">
-                                      <h3 className="font-bold text-gray-900 truncate text-sm leading-tight group-hover:text-blue-600 transition-colors">
+                                      <h3 className="font-bold text-gray-900 truncate text-sm group-hover:text-blue-600 transition-colors">
                                           {folder.name}
                                       </h3>
                                       {!isOnline && hasAudit && (
-                                          <span className="flex h-2 w-2 rounded-full bg-red-500 lg:hidden" />
+                                          <span className="flex h-1.5 w-1.5 rounded-full bg-red-500 lg:hidden" />
                                       )}
                                   </div>
-                                  <div className="flex items-center gap-1.5 text-[11px] text-gray-500 group-hover:text-gray-700">
-                                      <Globe className="h-3 w-3 text-gray-400" />
-                                      <span className="truncate font-mono opacity-80">{folder.root_url}</span>
+                                  <div className="flex items-center gap-1.5 text-[10px] text-gray-400 group-hover:text-gray-600">
+                                      <Globe className="h-2.5 w-2.5" />
+                                      <span className="truncate font-mono">{folder.root_url}</span>
                                   </div>
                               </div>
 
-                              {/* ZONE 2 : UPTIME HISTORY (Centre) - Elastique */}
-                              <div className="flex-1 flex flex-col justify-center px-4 py-3 lg:py-0 min-w-0 bg-white">
-                                  <div className="w-full flex items-end h-8 lg:h-full lg:pb-3 lg:pt-4">
+                              {/* 2. UPTIME HISTORY (Central & Élastique) */}
+                              <div className="flex-1 flex flex-col justify-end h-8 lg:h-auto pt-2 lg:pt-0">
+                                  <div className="w-full flex items-end opacity-80 group-hover:opacity-100 transition-opacity">
                                     <UptimeHistory history={uptimeHistory} size="sm" />
                                   </div>
                               </div>
 
-                              {/* ZONE 3 : MÉTRIQUES (Droite) - Fond grisé léger */}
-                              <div className="flex items-center justify-end gap-3 p-3 lg:px-6 bg-gray-50/50 border-t lg:border-t-0 lg:border-l border-gray-100 shrink-0">
+                              {/* 3. CAPSULES MÉTRIQUES (Droite) */}
+                              <div className="flex items-center justify-end gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-gray-50">
                                   
                                   {/* Score */}
-                                  <div className={cn("hidden sm:flex flex-col items-center justify-center w-[50px] h-[40px] rounded border", scoreClass)}>
-                                      <span className="text-[10px] font-bold uppercase opacity-70">Score</span>
+                                  <div className={cn("hidden sm:flex flex-col items-center justify-center w-[45px] h-[36px] rounded border bg-zinc-50", scoreClass)}>
+                                      <span className="text-[8px] font-bold uppercase opacity-60 leading-none mb-0.5">Score</span>
                                       <span className="font-mono text-xs font-bold leading-none">{healthScore ?? '-'}</span>
                                   </div>
 
-                                  {/* SSL (Compact) */}
-                                  <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded border h-[40px]", 
-                                      isSslOk ? "bg-white border-gray-200 text-gray-600" : "bg-red-50 border-red-200 text-red-700"
+                                  {/* Pages */}
+                                  <div className="flex flex-col items-center justify-center w-[45px] h-[36px] rounded border border-gray-100 bg-white text-gray-500">
+                                      <span className="text-[8px] font-bold uppercase opacity-60 leading-none mb-0.5">Pages</span>
+                                      <span className="font-mono text-xs font-bold leading-none">{pageCount}</span>
+                                  </div>
+
+                                  {/* SSL */}
+                                  <div className={cn("flex flex-col items-center justify-center min-w-[55px] h-[36px] px-1 rounded border", 
+                                      isSslOk ? "bg-white border-gray-100 text-gray-500" : "bg-red-50 border-red-100 text-red-600"
                                   )}>
-                                      {isSslOk ? <Lock className="h-3.5 w-3.5 opacity-60" /> : <Unlock className="h-3.5 w-3.5" />}
-                                      <div className="flex flex-col leading-none">
-                                          <span className="text-[9px] font-bold uppercase opacity-60">SSL</span>
-                                          <span className="font-mono text-xs font-bold">{sslDaysLeft !== null ? `${sslDaysLeft}j` : '-'}</span>
+                                      <span className="text-[8px] font-bold uppercase opacity-60 leading-none mb-0.5">SSL</span>
+                                      <div className="flex items-center gap-1 leading-none">
+                                          {!isSslOk && <Unlock className="h-2.5 w-2.5" />}
+                                          <span className="font-mono text-xs font-bold">
+                                              {sslDaysLeft !== null ? `${sslDaysLeft}j` : '-'}
+                                          </span>
                                       </div>
                                   </div>
 
-                                  {/* Pages (Compact) */}
-                                  <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-gray-200 bg-white text-gray-600 h-[40px]">
-                                      <Layers className="h-3.5 w-3.5 opacity-60" />
-                                      <div className="flex flex-col leading-none">
-                                          <span className="text-[9px] font-bold uppercase opacity-60">Pages</span>
-                                          <span className="font-mono text-xs font-bold">{pageCount}</span>
-                                      </div>
-                                  </div>
-
-                                  {/* Arrow Action */}
-                                  <div className="hidden lg:flex items-center justify-center w-8 h-8 rounded-full hover:bg-white hover:shadow-sm text-gray-300 group-hover:text-blue-600 transition-all ml-2">
+                                  {/* Flèche Action */}
+                                  <div className="hidden lg:flex items-center justify-center w-8 h-8 rounded-full hover:bg-zinc-100 text-gray-300 group-hover:text-blue-600 transition-all ml-1">
                                       <ArrowRight className="h-4 w-4" />
                                   </div>
 
