@@ -2,8 +2,8 @@ name: Daily PS Report Audit
 
 on:
   schedule:
-    # Exécution à 4h00 UTC ET à 12h00 UTC
-    - cron: '0 4,12 * * *'
+    # Exécution tous les jours à 4h00 du matin UTC uniquement
+    - cron: '0 4 * * *'
   # Permet le lancement manuel depuis l'interface GitHub (utile pour tester)
   workflow_dispatch:
 
