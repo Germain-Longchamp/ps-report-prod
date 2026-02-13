@@ -12,7 +12,9 @@ import {
   Plus,
   Activity,
   ArrowRight,
-  ListFilter
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,12 +22,6 @@ import { Input } from '@/components/ui/input'
 import { CreateSiteModal } from '@/components/CreateSiteModal'
 import { cn, generate60DayHistory } from '@/lib/utils'
 import { UptimeHistory } from '@/components/UptimeHistory'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 
 interface DashboardSiteListProps {
   folders: any[]
@@ -38,7 +34,21 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortOption>('default')
 
-  // 1. PRÉ-CALCUL DES DONNÉES (Pour permettre le tri)
+  // --- 1. LOGIQUE DE BASCULE DES TRI ---
+  
+  const toggleScoreSort = () => {
+    if (sort === 'score_desc') setSort('score_asc') // Du - bon au + bon
+    else if (sort === 'score_asc') setSort('default') // Reset
+    else setSort('score_desc') // Par défaut : Du meilleur au moins bon
+  }
+
+  const toggleSslSort = () => {
+    if (sort === 'ssl_asc') setSort('ssl_desc') // Du + loin au + proche
+    else if (sort === 'ssl_desc') setSort('default') // Reset
+    else setSort('ssl_asc') // Par défaut : Urgent (expire bientôt) en premier
+  }
+
+  // --- 2. PRÉ-CALCUL DES DONNÉES ---
   const processedFolders = useMemo(() => {
     return folders.map(folder => {
       const metric = metrics[folder.id]
@@ -73,7 +83,7 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
     })
   }, [folders, metrics])
 
-  // 2. FILTRAGE & TRI
+  // --- 3. FILTRAGE & TRI ---
   const filteredAndSortedFolders = useMemo(() => {
     let result = processedFolders.filter(item => 
       item.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -85,7 +95,7 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
         return result.sort((a, b) => (b.computed.healthScore || 0) - (a.computed.healthScore || 0))
       case 'score_asc':
         return result.sort((a, b) => (a.computed.healthScore || 0) - (b.computed.healthScore || 0))
-      case 'ssl_asc': // Expire bientôt en premier
+      case 'ssl_asc': // Expire bientôt (petit chiffre) en premier
         return result.sort((a, b) => (a.computed.sslDaysLeft || 9999) - (b.computed.sslDaysLeft || 9999))
       case 'ssl_desc':
         return result.sort((a, b) => (b.computed.sslDaysLeft || 0) - (a.computed.sslDaysLeft || 0))
@@ -114,7 +124,7 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
               </CreateSiteModal>
           </div>
 
-          {/* ROW 2 : FILTRES & TRI */}
+          {/* ROW 2 : FILTRES & TRI (BOUTONS DISTINCTS) */}
           <div className="flex flex-col sm:flex-row gap-3">
               {/* Barre de recherche */}
               <div className="relative flex-1">
@@ -127,35 +137,46 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
                   />
               </div>
 
-              {/* Boutons de Tri */}
+              {/* Boutons de Tri Distincts */}
               <div className="flex gap-2 shrink-0">
-                  <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                          <Button variant="outline" className="h-10 px-3 gap-2 bg-white border-gray-200 text-gray-700">
-                              <ListFilter className="h-4 w-4" />
-                              <span className="hidden sm:inline">Trier par</span>
-                          </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuItem onClick={() => setSort('default')}>
-                              Par défaut (Date)
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSort('score_desc')}>
-                              <BarChart3 className="h-4 w-4 mr-2 text-gray-400" /> Score : Haut → Bas
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSort('score_asc')}>
-                              <BarChart3 className="h-4 w-4 mr-2 text-gray-400" /> Score : Bas → Haut
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSort('ssl_asc')}>
-                              <Lock className="h-4 w-4 mr-2 text-gray-400" /> SSL : Expire bientôt
-                          </DropdownMenuItem>
-                      </DropdownMenuContent>
-                  </DropdownMenu>
+                  
+                  {/* BOUTON SCORE */}
+                  <Button 
+                    variant="outline" 
+                    onClick={toggleScoreSort}
+                    className={cn(
+                        "h-10 px-3 gap-2 border-gray-200 transition-colors",
+                        sort.startsWith('score') ? "bg-zinc-100 text-zinc-900 border-zinc-300" : "bg-white text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                      <BarChart3 className="h-4 w-4" />
+                      <span className="hidden sm:inline font-medium">Score</span>
+                      {sort === 'score_desc' && <ArrowDown className="h-3.5 w-3.5 ml-1" />}
+                      {sort === 'score_asc' && <ArrowUp className="h-3.5 w-3.5 ml-1" />}
+                      {!sort.startsWith('score') && <ArrowUpDown className="h-3.5 w-3.5 ml-1 opacity-50" />}
+                  </Button>
+
+                  {/* BOUTON SSL */}
+                  <Button 
+                    variant="outline" 
+                    onClick={toggleSslSort}
+                    className={cn(
+                        "h-10 px-3 gap-2 border-gray-200 transition-colors",
+                        sort.startsWith('ssl') ? "bg-zinc-100 text-zinc-900 border-zinc-300" : "bg-white text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                      <Lock className="h-4 w-4" />
+                      <span className="hidden sm:inline font-medium">SSL</span>
+                      {sort === 'ssl_asc' && <ArrowDown className="h-3.5 w-3.5 ml-1" />} {/* Urgent en premier (descendant visuellement comme une liste de priorité) */}
+                      {sort === 'ssl_desc' && <ArrowUp className="h-3.5 w-3.5 ml-1" />}
+                      {!sort.startsWith('ssl') && <ArrowUpDown className="h-3.5 w-3.5 ml-1 opacity-50" />}
+                  </Button>
+
               </div>
           </div>
       </div>
 
-      {/* --- ROW 3 : LISTE SUPER COMPACTE --- */}
+      {/* --- ROW 3 : LISTE --- */}
       <div className="space-y-2">
         {filteredAndSortedFolders.length > 0 ? (
            filteredAndSortedFolders.map((folder) => {
@@ -179,10 +200,10 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
                           
                           <div className={`absolute left-0 top-0 bottom-0 w-1 ${statusLineColor}`} />
 
-                          {/* CONTENEUR FLEX ULTRA-COMPACT (py-1.5) */}
+                          {/* CONTENEUR FLEX ULTRA-COMPACT */}
                           <div className="flex flex-col lg:flex-row lg:items-center py-1.5 pl-4 pr-2 gap-3 lg:gap-6 min-h-[56px]">
                               
-                              {/* 1. IDENTITÉ (Fixe) */}
+                              {/* 1. IDENTITÉ */}
                               <div className="flex flex-col justify-center gap-0.5 lg:w-[220px] shrink-0">
                                   <div className="flex items-center gap-2">
                                       <h3 className="font-bold text-gray-900 truncate text-sm leading-none group-hover:text-blue-600 transition-colors">
@@ -198,17 +219,17 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
                                   </div>
                               </div>
 
-                              {/* 2. UPTIME HISTORY (Central & Élastique) */}
+                              {/* 2. UPTIME HISTORY */}
                               <div className="flex-1 flex flex-col justify-end h-6 lg:h-auto pt-1 lg:pt-0">
                                   <div className="w-full flex items-end opacity-75 group-hover:opacity-100 transition-opacity">
                                     <UptimeHistory history={uptimeHistory} size="sm" />
                                   </div>
                               </div>
 
-                              {/* 3. CAPSULES MÉTRIQUES (Droite) */}
+                              {/* 3. CAPSULES MÉTRIQUES */}
                               <div className="flex items-center justify-end gap-2 shrink-0 pt-1 lg:pt-0 border-t lg:border-t-0 border-gray-50">
                                   
-                                  {/* Score (Hauteur réduite h-8) */}
+                                  {/* Score */}
                                   <div className={cn("hidden sm:flex flex-col items-center justify-center w-[45px] h-8 rounded border bg-zinc-50", scoreClass)}>
                                       <span className="text-[8px] font-bold uppercase opacity-60 leading-none mb-0.5">Score</span>
                                       <span className="font-mono text-xs font-bold leading-none">{healthScore ?? '-'}</span>
