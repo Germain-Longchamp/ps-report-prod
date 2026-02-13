@@ -12,8 +12,6 @@ import {
   Plus,
   Activity,
   ArrowRight,
-  ArrowUpDown,
-  Calendar,
   ListFilter
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -160,7 +158,7 @@ export function DashboardSiteList({ folders, metrics }: DashboardSiteListProps) 
       {/* --- ROW 3 : LISTE SUPER COMPACTE --- */}
       <div className="space-y-2">
         {filteredAndSortedFolders.length > 0 ? (
-           filteredFolders.map((folder) => {
+           filteredAndSortedFolders.map((folder) => {
               const { isOnline, hasAudit, healthScore, pageCount, sslDaysLeft, isSslOk, uptimeHistory } = folder.computed
 
               // Couleurs dynamiques
