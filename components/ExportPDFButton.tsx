@@ -3,8 +3,10 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { FileDown, Loader2 } from 'lucide-react'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+
+// ❌ ON SUPPRIME LES IMPORTS GLOBAUX ICI
+// import jsPDF from 'jspdf'
+// import autoTable from 'jspdf-autotable'
 
 interface ExportPDFButtonProps {
     siteName: string
@@ -27,20 +29,29 @@ export function ExportPDFButton({
 }: ExportPDFButtonProps) {
     const [isGenerating, setIsGenerating] = useState(false)
 
-    const handleExport = () => {
+    // On passe la fonction en async
+    const handleExport = async () => {
         setIsGenerating(true)
 
         try {
+            // ✅ CHARGEMENT DYNAMIQUE (LAZY LOADING) :
+            // Les librairies ne sont téléchargées par le navigateur qu'au moment du clic
+            const jsPDFModule = await import('jspdf')
+            const autoTableModule = await import('jspdf-autotable')
+            
+            const jsPDF = jsPDFModule.default
+            const autoTable = autoTableModule.default
+
             const doc = new jsPDF()
             const today = new Date().toLocaleDateString('fr-FR')
 
             // --- 1. EN-TÊTE DU DOCUMENT ---
             doc.setFontSize(22)
-            doc.setTextColor(15, 23, 42) // text-gray-900
+            doc.setTextColor(15, 23, 42)
             doc.text(`Rapport d'Audit : ${siteName}`, 14, 20)
 
             doc.setFontSize(10)
-            doc.setTextColor(100, 116, 139) // text-gray-500
+            doc.setTextColor(100, 116, 139)
             doc.text(`URL : ${siteUrl}`, 14, 28)
             doc.text(`Date du rapport : ${today}`, 14, 34)
 
@@ -92,9 +103,9 @@ export function ExportPDFButton({
                 head: [tableColumn],
                 body: tableRows,
                 theme: 'grid',
-                headStyles: { fillColor: [37, 99, 235], textColor: 255 }, // bg-blue-600
+                headStyles: { fillColor: [37, 99, 235], textColor: 255 },
                 styles: { fontSize: 9, cellPadding: 4 },
-                alternateRowStyles: { fillColor: [248, 250, 252] }, // bg-slate-50
+                alternateRowStyles: { fillColor: [248, 250, 252] },
             })
 
             // --- 5. TÉLÉCHARGEMENT ---
