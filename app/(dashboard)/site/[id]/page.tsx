@@ -14,9 +14,10 @@ import {
   Info
 } from 'lucide-react'
 import { PageList } from '@/components/PageList'
-import { Card, CardContent } from '@/components/ui/card' // <-- Ne pas oublier CardContent
+import { Card, CardContent } from '@/components/ui/card'
 import { SiteSettingsDialog } from '@/components/SiteSettingsDialog'
-import { UptimeHistory, DailyStatus } from '@/components/UptimeHistory' // <-- Réintégration de l'import
+import { UptimeHistory, DailyStatus } from '@/components/UptimeHistory'
+import { ExportPDFButton } from '@/components/ExportPDFButton' // <-- NOUVEL IMPORT
 import {
   Tooltip,
   TooltipContent,
@@ -138,6 +139,9 @@ export default async function Page({ params }: Props) {
 
   // Génération Historique (RÉINTÉGRÉ)
   const uptimeHistory = generate60DayHistory(sortedRootAudits)
+  
+  // --- NOUVEAU : CALCUL DES INCIDENTS POUR L'EXPORT PDF ---
+  const incidentCount60Days = uptimeHistory.filter((day: DailyStatus) => day.status === 'down').length
 
   // --- 4. CALCUL DU SCORE GLOBAL PONDÉRÉ ---
   let globalHealthScore: number | null = null
@@ -254,7 +258,17 @@ export default async function Page({ params }: Props) {
                 </div>
             </div>
             
-            <div className="flex items-center gap-2">
+            {/* MODIFICATION ICI : AJOUT DU BOUTON EXPORT PDF */}
+            <div className="flex flex-wrap items-center gap-2">
+                <ExportPDFButton 
+                    siteName={folder.name}
+                    siteUrl={folder.root_url}
+                    globalScore={globalHealthScore}
+                    isSSLValid={isSSLValid}
+                    isIndexable={isIndexable}
+                    incidentCount={incidentCount60Days}
+                    pages={pages}
+                />
                 <SiteSettingsDialog folder={folder} />
             </div>
         </header>
